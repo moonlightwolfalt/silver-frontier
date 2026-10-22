@@ -1,0 +1,89 @@
+// Usage: node server.js   (PORT=3000 by default)
+// Runs fetch_assets.py to generate the asset folders, then serves them:
+//   /                       gallery of every category
+//   /api/categories         { category: count }
+//   /api/assets/:category   [{ file, source }]
+//   /assets/<cat>/<file>    the files themselves
+//   POST /api/refresh       re-run the Python fetcher
+const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+
+const PORT = process.env.PORT || 3000;
+const ROOT = __dirname;
+const ASSETS = path.join(ROOT, "assets");
+const CATEGORIES = ["Animals", "UI", "Shop Skins", "Foods", "Game Object Assets", "Biomes", "Biome Terrains"];
+const TYPES = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+  ".svg": "image/svg+xml", ".gif": "image/gif", ".json": "application/json",
+  ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav", ".html": "text/html",
+};
+
+let running = null;
+function generate() {
+  if (running) return running;
+  running = new Promise((resolve, reject) => {
+    const p = spawn("python3", ["-I", path.join(ROOT, "fetch_assets.py"), "--manifest", path.join(ROOT, "mope-dump/manifest.json"), "--out", ASSETS], {
+      stdio: "inherit",
+    });
+    p.on("error", reject);
+    p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`fetch_assets.py exited ${code}`))));
+  }).finally(() => (running = null));
+  return running;
+}
+
+const readIndex = () => {
+  try { return JSON.parse(fs.readFileSync(path.join(ASSETS, "index.json"), "utf8")); }
+  catch { return {}; }
+};
+
+const json = (res, code, body) => {
+  res.writeHead(code, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(body));
+};
+
+const PAGE = `<!doctype html><meta charset=utf-8><title>Mope assets</title>
+<style>body{font:14px sans-serif;margin:16px}img{max-width:96px;max-height:96px;background:#ddd;margin:4px}</style>
+<body><h1>Mope assets</h1><div id=o></div><script>
+fetch('/api/assets-all').then(r=>r.json()).then(d=>{
+  o.innerHTML=Object.entries(d).map(([c,l])=>'<h2>'+c+' ('+l.length+')</h2>'+
+    l.map(e=>/\\.(png|jpe?g|webp|svg|gif)$/i.test(e.file)?'<img loading=lazy title="'+e.file+'" src="/assets/'+encodeURI(e.file)+'">':'<a href="/assets/'+encodeURI(e.file)+'">'+e.file+'</a> ').join('')).join('');
+});</script>`;
+
+http.createServer(async (req, res) => {
+  const url = new URL(req.url, "http://x");
+  const p = decodeURIComponent(url.pathname);
+
+  if (p === "/") { res.writeHead(200, { "Content-Type": TYPES[".html"] }); return res.end(PAGE); }
+  if (p === "/api/assets-all") return json(res, 200, readIndex());
+  if (p === "/api/categories") {
+    const idx = readIndex();
+    const out = Object.fromEntries(CATEGORIES.map((c) => [c, (idx[c] || []).length]));
+    return json(res, 200, out);
+  }
+  if (p.startsWith("/api/assets/")) {
+    const cat = p.slice("/api/assets/".length);
+    return json(res, 200, readIndex()[cat] || []);
+  }
+  if (p === "/api/refresh" && req.method === "POST") {
+    try { await generate(); return json(res, 200, { ok: true }); }
+    catch (e) { return json(res, 500, { error: String(e.message) }); }
+  }
+  if (p.startsWith("/assets/")) {
+    const file = path.normalize(path.join(ASSETS, p.slice("/assets/".length)));
+    if (!file.startsWith(ASSETS + path.sep)) { res.writeHead(403); return res.end(); }
+    return fs.readFile(file, (err, data) => {
+      if (err) { res.writeHead(404); return res.end("not found"); }
+      res.writeHead(200, { "Content-Type": TYPES[path.extname(file).toLowerCase()] || "application/octet-stream" });
+      res.end(data);
+    });
+  }
+  res.writeHead(404); res.end("not found");
+}).listen(PORT, async () => {
+  console.log(`http://localhost:${PORT}`);
+  if (!fs.existsSync(path.join(ASSETS, "index.json"))) {
+    console.log("no assets yet, running fetch_assets.py ...");
+    try { await generate(); } catch (e) { console.error(e.message); }
+  }
+});
