@@ -11,7 +11,14 @@
     "typescript": "^7"
   },
   "scripts": {
+    "setup": "bun run fetch-mope.ts && bun run pretty.ts && bun run patch-client.ts",
+    "start": "node server.js",
+    "game": "node game-server.js",
     "pretty": "bun run pretty.ts",
     "patch-client": "bun run patch-client.ts"
+  },
+  "dependencies": {
+    "acorn": "^8.19.0",
+    "ws": "^8.22.0"
   }
 }
