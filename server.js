@@ -1,23 +1,28 @@
 // Usage: node server.js   (PORT=3000 by default)
 // Runs fetch_assets.py to generate the asset folders, then serves them:
-//   /                       gallery of every category
+//   /                       the fetched mope.io index.html (mope-dump/site/mope.io), and
+//                           any script/css saved next to it, at their original paths
+//   /gallery                gallery of every category
 //   /api/categories         { category: count }
 //   /api/assets/:category   [{ file, source }]
 //   /assets/<cat>/<file>    the files themselves
 //   POST /api/refresh       re-run the Python fetcher
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
-const { spawn } = require("node:child_process");
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const PORT = process.env.PORT || 3000;
-const ROOT = __dirname;
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS = path.join(ROOT, "assets");
+const SITE = path.join(ROOT, "mope-dump/site/mope.io");
 const CATEGORIES = ["Animals", "UI", "Shop Skins", "Foods", "Game Object Assets", "Biomes", "Biome Terrains"];
 const TYPES = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
   ".svg": "image/svg+xml", ".gif": "image/gif", ".json": "application/json",
   ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav", ".html": "text/html",
+  ".js": "text/javascript", ".css": "text/css",
 };
 
 let running = null;
@@ -55,7 +60,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   const p = decodeURIComponent(url.pathname);
 
-  if (p === "/") { res.writeHead(200, { "Content-Type": TYPES[".html"] }); return res.end(PAGE); }
+  if (p === "/gallery") { res.writeHead(200, { "Content-Type": TYPES[".html"] }); return res.end(PAGE); }
   if (p === "/api/assets-all") return json(res, 200, readIndex());
   if (p === "/api/categories") {
     const idx = readIndex();
@@ -79,7 +84,18 @@ http.createServer(async (req, res) => {
       res.end(data);
     });
   }
-  res.writeHead(404); res.end("not found");
+  // Fall through to the fetched mope.io site files; "/" maps to index.html.
+  const rel = p === "/" ? "index.html" : p.slice(1);
+  const file = path.normalize(path.join(SITE, rel));
+  if (!file.startsWith(SITE + path.sep)) { res.writeHead(403); return res.end(); }
+  fs.readFile(file, (err, data) => {
+    if (err) {
+      res.writeHead(404);
+      return res.end(p === "/" ? "mope.io index.html not fetched yet; run: bun run fetch-mope.ts" : "not found");
+    }
+    res.writeHead(200, { "Content-Type": TYPES[path.extname(file).toLowerCase()] || "application/octet-stream" });
+    res.end(data);
+  });
 }).listen(PORT, async () => {
   console.log(`http://localhost:${PORT}`);
   if (!fs.existsSync(path.join(ASSETS, "index.json"))) {
