@@ -20,3 +20,4 @@ bin-release/
 # Downloaded/generated
 mope-dump/
 assets/
+node_modules/

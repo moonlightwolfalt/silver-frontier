@@ -1,0 +1,1 @@
+# fetch_assets.py uses only the Python standard library, so nothing is required yet.
