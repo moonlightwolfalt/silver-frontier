@@ -1,11 +1,12 @@
 // Usage: node server.js   (PORT=3000 by default)
 // Runs fetch_assets.py to generate the asset folders, then serves them:
 //   /                       the fetched mope.io index.html (mope-dump/site/mope.io), and
-//                           any script/css saved next to it, at their original paths
+//                           any script/css saved next to it, at their original paths; files
+//                           not fetched yet are pulled from mope.io once and cached there
 //   /gallery                gallery of every category
 //   /api/categories         { category: count }
 //   /api/assets/:category   [{ file, source }]
-//   /assets/<cat>/<file>    the files themselves
+//   /dl/<cat>/<file>        the downloaded category files (assets/)
 //   POST /api/refresh       re-run the Python fetcher
 import http from "node:http";
 import fs from "node:fs";
@@ -53,7 +54,7 @@ const PAGE = `<!doctype html><meta charset=utf-8><title>Mope assets</title>
 <body><h1>Mope assets</h1><div id=o></div><script>
 fetch('/api/assets-all').then(r=>r.json()).then(d=>{
   o.innerHTML=Object.entries(d).map(([c,l])=>'<h2>'+c+' ('+l.length+')</h2>'+
-    l.map(e=>/\\.(png|jpe?g|webp|svg|gif)$/i.test(e.file)?'<img loading=lazy title="'+e.file+'" src="/assets/'+encodeURI(e.file)+'">':'<a href="/assets/'+encodeURI(e.file)+'">'+e.file+'</a> ').join('')).join('');
+    l.map(e=>/\\.(png|jpe?g|webp|svg|gif)$/i.test(e.file)?'<img loading=lazy title="'+e.file+'" src="/dl/'+encodeURI(e.file)+'">':'<a href="/dl/'+encodeURI(e.file)+'">'+e.file+'</a> ').join('')).join('');
 });</script>`;
 
 http.createServer(async (req, res) => {
@@ -75,8 +76,8 @@ http.createServer(async (req, res) => {
     try { await generate(); return json(res, 200, { ok: true }); }
     catch (e) { return json(res, 500, { error: String(e.message) }); }
   }
-  if (p.startsWith("/assets/")) {
-    const file = path.normalize(path.join(ASSETS, p.slice("/assets/".length)));
+  if (p.startsWith("/dl/")) {
+    const file = path.normalize(path.join(ASSETS, p.slice("/dl/".length)));
     if (!file.startsWith(ASSETS + path.sep)) { res.writeHead(403); return res.end(); }
     return fs.readFile(file, (err, data) => {
       if (err) { res.writeHead(404); return res.end("not found"); }
@@ -88,7 +89,21 @@ http.createServer(async (req, res) => {
   const rel = p === "/" ? "index.html" : p.slice(1);
   const file = path.normalize(path.join(SITE, rel));
   if (!file.startsWith(SITE + path.sep)) { res.writeHead(403); return res.end(); }
-  fs.readFile(file, (err, data) => {
+  fs.readFile(file, async (err, data) => {
+    if (err && p !== "/") {
+      // Not fetched yet: pull it from mope.io once and keep a copy.
+      try {
+        const up = await fetch(new URL(p + url.search, "https://mope.io"), { headers: { "User-Agent": "Mozilla/5.0 (compatible; asset-fetcher)" } });
+        if (up.ok) {
+          data = Buffer.from(await up.arrayBuffer());
+          if (!url.search) {
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, data);
+          }
+          err = null;
+        }
+      } catch {}
+    }
     if (err) {
       res.writeHead(404);
       return res.end(p === "/" ? "mope.io index.html not fetched yet; run: bun run fetch-mope.ts" : "not found");

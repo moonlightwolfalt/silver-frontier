@@ -11,6 +11,7 @@
     "typescript": "^7"
   },
   "scripts": {
-    "pretty": "bun run pretty.ts"
+    "pretty": "bun run pretty.ts",
+    "patch-client": "bun run patch-client.ts"
   }
 }
