@@ -137,6 +137,10 @@ export function generateWorld({ pg, E, D, cm, pm, sg, seed = 1 }) {
     ["arctic", B.arctic.x - B.arctic.width * 0.2, B.arctic.y],
     ["desert", B.desert.x + B.desert.width * 0.2, B.desert.y],
   ];
+  // Clear the ground under each cake first, so nothing sits on its layers.
+  for (const [, x, y] of cakes)
+    for (let i = out.length - 1; i >= 0; i--)
+      if (out[i].type !== "river" && Math.hypot(out[i].x - x, out[i].y - y) < 260 + out[i].size / 2) out.splice(i, 1);
   for (const [biome, x, y] of cakes) {
     add("cake", 0, biome, x, y, 520);
     balloons(x, y, 300, 8, biome);

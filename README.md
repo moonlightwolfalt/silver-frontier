@@ -125,9 +125,16 @@ an allowed email before the site loads (free for up to 50 users).
   balloons, and beehives by land trees. Each world has about 1,600 foods across 45 kinds, from
   berries to mushroom bushes, eggs, melons, conches and cacti. As in mope.io, each food can only be eaten by the
   tiers in the client's own table (berries up to tier 8, watermelons from tier 11, and so on).
-  Eaten food comes back after a few seconds. The cake and slingshots are scenery for now: they
-  can't be climbed or used yet. To play on mope.io's real map instead, record it (see
+  Eaten food comes back after a few seconds. To play on mope.io's real map instead, record it (see
   [The real mope.io map](#the-real-mopeio-map)).
+- **Giant cake:** walk onto it to climb its three layers. Each layer makes you 12% bigger and
+  widens your view. Whoever has held the top layer longest is king of the cake and earns three
+  foods' worth of XP every 5 s. The cake keeps putting out party food around it, up to 30 at a
+  time: crumbs and cookies, then cupcakes, cake slices and gifts the higher anyone stands.
+- **Slingshots:** walk onto the pad to load it, then move back to pull the band (it turns red as
+  it stretches). Point forward or boost to let go, and you fly the way the slingshot faces: up to
+  about 3,300 units at full pull. Walking off forward without pulling unloads it. `/pos` shows
+  the nearest cake and slingshot, and which way it faces.
 - **XP cap:** 10 trillion (`limits.js`). mope.io sends XP as a 32-bit number, which stops at
   4.29 billion, so the client patch turns it into a 64-bit value. At tier 17 the XP bar shows
   progress toward the cap ("1.5B XP / 10T XP"), filled on the same log scale as the growth.
@@ -227,7 +234,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `/players`, `/kick <player>` | moderator |
 | `/ban <player> [minutes]`, `/unban <email>` | trusted moderator |
 | `/announce <message>` | event team |
-| `/shoot [variant] [count]` fires pumpkins the way you face (they roll, stop and can be collected; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole), `/face <degrees>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
+| `/shoot [variant] [count]` fires pumpkins the way you face (they roll, stop and can be collected; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole, cake and slingshot), `/face <degrees>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
 | `/coins <n> [email]`, `/gems <n> [email]`, `/role <email> <0-5>` | developer |
 
 ## Files

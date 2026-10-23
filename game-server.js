@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { findClientChunk, loadClient } from "./client-runtime.js";
 import { REGIONS } from "./regions.js";
-import { generateWorld, worldFromRecording } from "./world.js";
+import { generateWorld, worldFromRecording, STYLED_FOODS } from "./world.js";
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
@@ -134,7 +134,9 @@ function writeAnimalSync(w, a) {
   for (let i = 0; i < 7; i++) w.writeBoolean(false); // diving, healing, burning, frozen, bleeding, poisoned, stunned
   w.writeBoolean(false); // stuck in web
   w.writeBoolean(false); // constricted
-  for (let i = 0; i < 7; i++) w.writeBoolean(false); // shivering, sweating, aloed, under bush, ability1, low resource, flying
+  for (let i = 0; i < 6; i++) w.writeBoolean(false); // shivering, sweating, aloed, under bush, ability1, low resource
+  w.writeBoolean(!!a.flying); // flung by a slingshot
+  if (a.skin) w.writeBoolean(false); // the client reads a boosting flag for animals with an equipped item
   w.writeBoolean(true); // visible
   w.writeBoolean(!!a.godMode); // spawn immunity (shown while god mode is on)
   w.writeBits(a.biomeHere, 3);
@@ -166,6 +168,24 @@ function segmentDistance(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+// Giant cake: layer edges as shares of its radius (the client's Vg.LAYERS), and per layer stood on:
+// size and view gained. The king of the hill gets 3 foods' worth of XP every 5 s. Party food comes
+// out around it, up to 30 at a time, from a better menu the higher anyone stands.
+const CAKE_LAYERS = [1, 0.68, 0.38];
+const CAKE_GROWTH = 0.12;
+const CAKE_VIEW = 0.12;
+const CAKE_KING_MS = 5000;
+const CAKE_FOOD_MAX = 30;
+const CAKE_FOODS = [
+  ["cake_crumb", "cake_crumb", "cookie"],
+  ["cake_crumb", "cookie", "cookie", "cupcake"],
+  ["cookie", "cupcake", "cupcake", "cake_slice"],
+  ["cupcake", "cake_slice", "cake_slice", "gift"],
+];
+// Slingshots: pull needed to fire, and the band's full stretch (the client's pad track, 130).
+const SLING_MIN_PULL = 25;
+const SLING_MAX_PULL = 130;
+
 // The client's hole goal states (Tf): what a hole shows above it.
 const GOAL_STATE = { DISABLED: 0, GOAL: 1, STATS: 2, TOTAL_GOALS: 3 };
 
@@ -181,6 +201,16 @@ function writeHoleGoal(w, hole, { state, variant = 0, name = "", goals = 0, xp =
     w.writeUint16(Math.min(65535, goals));
     w.writeUint32(Math.min(2 ** 32 - 1, xp));
   }
+}
+
+// position record for a slingshot ($g.synchronize): 14-bit id, "changed", then either the loaded
+// animal's id, or (unloaded) whether it was fired, which shows the launch on the client.
+function writeSlingshot(w, sling, { loaded = null, fired = false }) {
+  w.writeBits(sling.id, 14);
+  w.writeBoolean(true);
+  w.writeBoolean(!!loaded);
+  if (loaded) w.writeBits(loaded.id, 14);
+  else w.writeBoolean(fired);
 }
 
 // update message: groups of [u16 65535 - kind][u16 count] + length-prefixed records
@@ -322,6 +352,8 @@ export class Lobby {
     this.volcano = volcano;
     for (const e of entities) this.addEntity(e, false);
     this.holes = entities.filter((e) => e.type === "hole");
+    this.cakes = entities.filter((e) => e.type === "cake");
+    this.slingshots = entities.filter((e) => e.type === "slingshot");
     this.terrainZones = entities
       .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
       .sort((a, b) => (a.type === "island" ? -1 : 0) - (b.type === "island" ? -1 : 0)); // islands win over sea
@@ -405,6 +437,8 @@ export class Lobby {
 
   spawn(p, slug, subspecies = 0) {
     const prev = p.animal;
+    this.unloadSlingshot(p);
+    p.flight = null;
     p.animal = this.makeAnimal(p, slug, subspecies, prev && { x: prev.x, y: prev.y });
     p.target = { x: p.animal.x, y: p.animal.y };
     p.animal.size = this.targetSize(p); // a new animal starts at the size its XP calls for
@@ -420,6 +454,8 @@ export class Lobby {
 
   despawn(p, stats = true) {
     if (!p.animal) return;
+    this.unloadSlingshot(p);
+    p.flight = null;
     const id = p.animal.id;
     p.animal = null;
     this.freeIds.push(id);
@@ -622,6 +658,7 @@ export class Lobby {
       p.xp += this.foodXP(a);
       this.sendXP(p);
       this.checkProgress(p);
+      if (e.fromCake) continue; // put out by a cake, which makes more
       const { id, ...food } = e;
       setTimeout(() => this.timer && this.addEntity(food), 8000);
     }
@@ -739,13 +776,21 @@ export class Lobby {
         }
         pumpkins.push(record((w) => writeHoleGoal(w, show.hole, now < show.goalUntil ? show.goal : show.stats)));
       }
+    const now = Date.now();
+    if (this.ticks % 5 === 0) // keep loaded slingshots showing for players who just joined
+      for (const sling of this.slingshots) if (sling.loaded) pumpkins.push(record((w) => writeSlingshot(w, sling, { loaded: sling.loaded.animal })));
     const records = [];
     for (const p of this.players) {
       const a = p.animal;
       if (!a) continue;
-      this.move(p, dt);
+      if (p.flight) this.fly(p, now);
+      else {
+        this.move(p, dt);
+        this.slingshotStep(p, now, pumpkins);
+      }
+      this.cakeStep(p, now);
       // ease toward the size XP calls for, so growing and shrinking animate
-      const target = this.targetSize(p);
+      const target = this.targetSize(p) * (1 + CAKE_GROWTH * (p.cakeLayer ?? 0));
       a.size += Math.abs(target - a.size) < 0.05 ? target - a.size : (target - a.size) * 0.15;
       records.push(record((w) => writeAnimalSync(w, a)));
     }
@@ -758,11 +803,154 @@ export class Lobby {
       const focus = p.animal ?? p.camera;
       if (focus)
         groups.push(["camera", [encode("camera", {
-          x: precision(focus.x, MAP.x, 16), y: precision(focus.y, MAP.y, 16), zoom: precision(p.zoom ?? 1, 15, 8),
+          x: precision(focus.x, MAP.x, 16), y: precision(focus.y, MAP.y, 16), zoom: precision(this.zoomOf(p), 15, 8),
         })]]);
       // Always send something so the client's silence watchdog stays happy.
       p.ws.send(records.length || pumpkins.length || focus || minimap || leaderboard ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
     }
+    if (this.ticks % 20 === 0) for (const cake of this.cakes) this.cakeSecond(cake, now);
+  }
+
+  // Camera zoom (lower sees more): /zoom's setting, wider on the cake's layers and in flight.
+  zoomOf(p) {
+    return (p.zoom ?? 1) * (1 - CAKE_VIEW * (p.cakeLayer ?? 0)) * (p.flight ? 0.8 : 1);
+  }
+
+  // ---------- giant cake ----------
+  // Three layers (the client draws them at 100%, 68% and 38% of its size). Each layer you stand on
+  // makes you bigger and widens your view. The animal that has held the top layer longest is king
+  // of the hill and earns XP every few seconds. The cake keeps putting out party food around it,
+  // better food the higher anyone is standing.
+
+  cakeStep(p, now) {
+    const a = p.animal;
+    let layer = 0, on = null;
+    if (!a.flying)
+      for (const cake of this.cakes) {
+        const d = Math.hypot(a.x - cake.x, a.y - cake.y), r = cake.size / 2;
+        if (d >= r) continue;
+        on = cake;
+        layer = CAKE_LAYERS.filter((share) => d < r * share).length;
+        break;
+      }
+    if (layer === 3 && p.cakeLayer !== 3) p.topSince = now;
+    if (layer !== 3) p.topSince = null;
+    p.cakeLayer = layer;
+    p.cake = on;
+  }
+
+  cakeSecond(cake, now) {
+    const on = [...this.players].filter((p) => p.animal && p.cake === cake);
+    // king of the hill
+    const top = on.filter((p) => p.cakeLayer === 3).sort((a, b) => a.topSince - b.topSince);
+    const king = top[0];
+    if (cake.king !== king) {
+      cake.king = king;
+      if (king) {
+        king.kingXPAt = now + CAKE_KING_MS;
+        this.serverMessage(king, "You're king of the cake! Hold the top layer to earn XP.");
+      }
+    }
+    if (king && now >= king.kingXPAt) {
+      king.kingXPAt = now + CAKE_KING_MS;
+      king.xp += this.foodXP(king.animal) * 3;
+      this.sendXP(king);
+      this.checkProgress(king);
+    }
+    // party food
+    const best = Math.max(0, ...on.map((p) => p.cakeLayer));
+    if (now < (cake.foodAt ?? 0)) return;
+    cake.foodAt = now + (best ? 1500 : 4000);
+    const out = [...this.entities.values()].filter((e) => e.fromCake === cake.id).length;
+    if (out >= CAKE_FOOD_MAX) return;
+    const menu = CAKE_FOODS[best];
+    const name = menu[Math.floor(this.rand() * menu.length)];
+    const angle = this.rand() * Math.PI * 2, d = cake.size / 2 + 30 + this.rand() * 160;
+    const x = cake.x + Math.cos(angle) * d, y = cake.y + Math.sin(angle) * d;
+    this.addEntity({
+      type: "food", species: D[name], biome: cake.biome, x, y, size: name === "gift" || name === "cake_slice" ? 34 : 20,
+      angle: this.rand() * Math.PI * 2, fromCake: cake.id, ...(STYLED_FOODS.has(name) ? { style: 1 + Math.floor(this.rand() * 7) } : {}),
+    });
+  }
+
+  // ---------- slingshots ----------
+  // Walk onto the pad to load it, then move back to pull the band (up to 130). Point forward again
+  // (or boost) to let go: you fly the way the slingshot faces, further the harder you pulled.
+  // Walking off forward without pulling unloads it.
+
+  slingshotStep(p, now, syncs) {
+    const a = p.animal;
+    const sling = p.sling;
+    if (!sling) {
+      if (now < (p.slingReadyAt ?? 0)) return;
+      for (const s of this.slingshots)
+        if (!s.loaded && Math.hypot(a.x - s.x, a.y - s.y) < 45 + a.size * 0.15) {
+          s.loaded = p;
+          p.sling = s;
+          syncs.push(record((w) => writeSlingshot(w, s, { loaded: a })));
+          return;
+        }
+      return;
+    }
+    const cos = Math.cos(sling.angle), sin = Math.sin(sling.angle);
+    const rx = a.x - sling.x, ry = a.y - sling.y;
+    let along = rx * cos + ry * sin, across = -rx * sin + ry * cos; // along > 0 is in front of the pad
+    const pull = Math.max(0, -along);
+    const aim = (p.target.x - sling.x) * cos + (p.target.y - sling.y) * sin;
+    if (pull >= SLING_MIN_PULL && (aim > along + 40 || a.boostUntil > now)) return this.launch(p, pull, now, syncs);
+    if (along > 30 || Math.abs(across) > 80) {
+      this.unloadSlingshot(p, syncs);
+      p.slingReadyAt = now + 800;
+      return;
+    }
+    // the band holds the animal on the pad's track
+    along = Math.min(30, Math.max(-SLING_MAX_PULL, along));
+    across = Math.min(40, Math.max(-40, across));
+    a.x = sling.x + along * cos - across * sin;
+    a.y = sling.y + along * sin + across * cos;
+  }
+
+  launch(p, pull, now, syncs) {
+    const a = p.animal, sling = p.sling;
+    const power = Math.min(1, pull / SLING_MAX_PULL);
+    const distance = 700 + 2600 * power;
+    const ms = 700 + 1100 * power;
+    p.flight = {
+      x0: a.x, y0: a.y, t0: now, ms,
+      x1: Math.min(MAP.x - 50, Math.max(50, a.x + Math.cos(sling.angle) * distance)),
+      y1: Math.min(MAP.y - 50, Math.max(50, a.y + Math.sin(sling.angle) * distance)),
+    };
+    a.flying = true;
+    a.angle = sling.angle;
+    a.vx = a.vy = 0;
+    sling.loaded = null;
+    p.sling = null;
+    p.slingReadyAt = now + ms + 1500;
+    syncs.push(record((w) => writeSlingshot(w, sling, { fired: true })));
+  }
+
+  fly(p, now) {
+    const a = p.animal, f = p.flight;
+    const t = Math.min(1, (now - f.t0) / f.ms);
+    const k = 1 - (1 - t) ** 2; // fast off the band, easing into the landing
+    a.x = f.x0 + (f.x1 - f.x0) * k;
+    a.y = f.y0 + (f.y1 - f.y0) * k;
+    a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[biomeAt(a.x, a.y)];
+    if (t < 1) return;
+    p.flight = null;
+    a.flying = false;
+    p.target = { x: a.x, y: a.y };
+  }
+
+  // Lets go of a loaded slingshot without firing (the animal left, died or changed).
+  unloadSlingshot(p, syncs) {
+    const sling = p.sling;
+    if (!sling) return;
+    sling.loaded = null;
+    p.sling = null;
+    const rec = record((w) => writeSlingshot(w, sling, { fired: false }));
+    if (syncs) syncs.push(rec);
+    else this.broadcast(updateMessage([["position", [rec]]]));
   }
 
   close() {

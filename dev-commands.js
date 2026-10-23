@@ -24,7 +24,7 @@ const COMMANDS = {
   god: { role: 4, usage: "/god  (toggle)", run: god },
   tp: { role: 4, usage: "/tp <x> <y> | /tp <player>", run: tp },
   face: { role: 4, usage: "/face <degrees>  (0 = right, 90 = down; aims /shoot)", run: face },
-  pos: { role: 1, usage: "/pos  (your position, and the nearest hole)", run: pos },
+  pos: { role: 1, usage: "/pos  (your position, and the nearest hole, cake and slingshot)", run: pos },
   bring: { role: 4, usage: "/bring <player>", run: bring },
   spawn: { role: 4, usage: "/spawn <food> [count]", run: spawnFood },
   shoot: { role: 4, usage: "/shoot [variant] [count]  (fires pumpkins the way you face; default random variant)", run: shoot },
@@ -145,8 +145,11 @@ function face(ctx, [deg]) {
 
 function pos(ctx) {
   const a = needAnimal(ctx);
-  const hole = [...ctx.lobby.holes].sort((h1, h2) => Math.hypot(h1.x - a.x, h1.y - a.y) - Math.hypot(h2.x - a.x, h2.y - a.y))[0];
-  reply(ctx, `You: ${Math.round(a.x)}, ${Math.round(a.y)}` + (hole ? `  ·  nearest hole: ${Math.round(hole.x)}, ${Math.round(hole.y)}` : ""));
+  const nearest = (list) => [...list].sort((e1, e2) => Math.hypot(e1.x - a.x, e1.y - a.y) - Math.hypot(e2.x - a.x, e2.y - a.y))[0];
+  const at = (label, e, extra = "") => (e ? `  ·  ${label}: ${Math.round(e.x)}, ${Math.round(e.y)}${extra}` : "");
+  const sling = nearest(ctx.lobby.slingshots);
+  reply(ctx, `You: ${Math.round(a.x)}, ${Math.round(a.y)}` + at("hole", nearest(ctx.lobby.holes)) + at("cake", nearest(ctx.lobby.cakes)) +
+    at("slingshot", sling, sling ? ` facing ${Math.round((sling.angle * 180) / Math.PI)}°` : ""));
 }
 
 function tp(ctx, [a, b]) {
