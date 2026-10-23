@@ -334,16 +334,20 @@ export class Lobby {
     return [form.minimumSize ?? cfg.minimumSize, form.maximumSize ?? cfg.maximumSize];
   }
 
-  // Size grows from the minimum at the tier's XP requirement to the maximum at the next tier's
-  // (tier 17: from 10M to 20M), and shrinks again when XP goes down. /size pins it instead.
+  // Size grows from the minimum at the tier's XP requirement to the maximum at the next tier's,
+  // and shrinks again when XP goes down. Tier 17 has no next tier, so it keeps growing all the
+  // way to MAX_XP (10 trillion) on a log scale: every ×10 in XP adds the same amount of size.
+  // /size pins it instead.
   targetSize(p) {
     const a = p.animal;
     if (p.fixedSize) return p.fixedSize;
     const [min, max] = this.sizeRange(a);
     const from = Lr[a.tier - 1].requiredXP;
-    const to = Lr[a.tier]?.requiredXP ?? from * 2;
-    const progress = Math.min(1, Math.max(0, (p.xp - from) / (to - from)));
-    return min + (max - min) * progress;
+    const next = Lr[a.tier]?.requiredXP;
+    const progress = next !== undefined
+      ? (p.xp - from) / (next - from)
+      : p.xp <= from ? 0 : Math.log(p.xp / from) / Math.log(MAX_XP / from);
+    return min + (max - min) * Math.min(1, Math.max(0, progress));
   }
 
   // Highest tier (1-17) the player's XP has reached, from the client's own XP table (Lr[i] is

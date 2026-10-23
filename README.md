@@ -133,7 +133,8 @@ an allowed email before the site loads (free for up to 50 users).
   uses its own value: 352 at tier 1, slowing to 224 at tier 17.
 - **Size:** every animal grows from its tier's minimum to maximum size as its XP goes from
   that tier's requirement to the next tier's, using the client's own size table, including
-  forms with their own range. Tier 17 grows from 10M to 20M. Losing XP shrinks it again, and
+  forms with their own range. Tier 17 keeps growing from 10M all the way to 10 trillion XP, on a log scale (each ×10 in XP
+  adds the same amount of size). Losing XP shrinks it again, and
   upgrading starts the new animal at its tier's minimum. `/size <n>` pins a size and
   `/size auto` hands it back to XP.
 - **Pumpkins:** 45 per world on land, arctic and desert. Touching one collects it for XP, and a
