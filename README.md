@@ -164,6 +164,9 @@ an allowed email before the site loads (free for up to 50 users).
   side, shown while playing on a local server) and the **Up**/**Down** keys step the upgrade menu through all 17 tiers, from Mouse to
   Black/King Dragon. Click an animal, or press its number key (the keys reach the first nine
   cards; click the rest). In the console, `localtest.up(n)` / `localtest.down(n)` do the same.
+  Picking a higher-tier animal this way (or with `/animal`) raises your XP to that tier's
+  requirement, so the XP bar and size match the animal. Picking a lower one keeps your XP, and
+  the automatic upgrade menu waits until you earn past a new tier.
 
 ## Accounts
 

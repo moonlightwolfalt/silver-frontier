@@ -317,8 +317,10 @@ export class Lobby {
     p.ws.send(updateMessage([["serverMessage", [encode("serverMessage", { message, translate: false })]]]));
   }
 
-  // Sandbox upgrade menu: every animal of the chosen tier.
-  showTier(p, tier) {
+  // Upgrade menu: every animal of the chosen tier. `sandbox` marks menus opened by the
+  // Up/Down buttons and keys rather than by earning XP.
+  showTier(p, tier, sandbox = true) {
+    p.menuSandbox = sandbox;
     p.menuTier = Math.min(Lr.length, Math.max(1, tier));
     p.menu = Lr[p.menuTier - 1].animals.map((species) => T[species]);
     p.ws.send(encode("upgradeMenu", {
@@ -430,9 +432,22 @@ export class Lobby {
 
   // Natural progression: once XP reaches the next tier, offer that tier's animals, all the way
   // to tier 17. One tier per menu, like mope.io; the next menu follows the pick if XP allows.
+  // After a sandbox pick (Up/Down buttons, /animal) this waits until XP passes a tier above the
+  // one XP had already reached, so a downgrade with lots of XP doesn't reopen the menu at once.
   checkProgress(p) {
     if (!p.animal || p.menu.length) return;
-    if (this.earnedTier(p) > p.animal.tier) this.showTier(p, p.animal.tier + 1);
+    const earned = this.earnedTier(p);
+    if (earned > p.animal.tier && earned > (p.autoFloor ?? 0)) this.showTier(p, p.animal.tier + 1, false);
+  }
+
+  // Changes the player's animal. Moving to a higher tier than XP has reached raises XP to that
+  // tier's requirement, so the XP bar and size match the animal; moving down keeps XP.
+  switchAnimal(p, slug, subspecies = 0, sandbox = true) {
+    const tier = Lr.findIndex((t) => t.animals.includes(T[slug])) + 1;
+    p.xp = Math.max(p.xp, Lr[tier - 1].requiredXP);
+    this.spawn(p, slug, subspecies);
+    p.autoFloor = sandbox ? this.earnedTier(p) : 0;
+    this.checkProgress(p);
   }
 
   // Food is worth about 1/30 of the gap to the next tier, so every tier takes a similar effort.
@@ -600,6 +615,7 @@ export function createGameServer({ accounts, parties }) {
       case "startGameSession": {
         p.name = (msg.name || p.account?.displayName || "").slice(0, 32);
         p.xp = 0;
+        p.autoFloor = 0;
         p.fixedSize = null;
         p.spawnedAt = Date.now();
         // Invite links carry the party code; join that party if it isn't the one we're in.
@@ -639,8 +655,7 @@ export function createGameServer({ accounts, parties }) {
         const slug = p.menu[msg.slot];
         p.menu = [];
         p.skinOverride = msg.skinOverride;
-        if (p.animal && slug) lobby.spawn(p, slug);
-        lobby.checkProgress(p);
+        if (p.animal && slug) lobby.switchAnimal(p, slug, 0, p.menuSandbox);
         return;
       }
       case "chatMessage": {

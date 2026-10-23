@@ -86,7 +86,7 @@ function animal(ctx, [slug, sub]) {
   const { M } = ctx.game;
   if (!M[slug]) throw new Error(`no animal "${slug}"`);
   needAnimal(ctx);
-  ctx.lobby.spawn(ctx.player, slug, Number(sub) || 0);
+  ctx.lobby.switchAnimal(ctx.player, slug, Number(sub) || 0);
 }
 
 function tier(ctx, [n]) {
