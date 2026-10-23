@@ -57,6 +57,41 @@ globalThis.localtest = {
   up: (n = 1) => localtestSend(\`upgrade\`, n),
   down: (n = 1) => localtestSend(\`downgrade\`, n),
 };
+// On-screen sandbox buttons: the same messages as the Up/Down binds. Shown only while playing
+// on a local server; presses don't reach the game's own pointer handlers (no accidental boost).
+(function sandboxButtons() {
+  if (typeof document === \`undefined\`) return;
+  let style = document.createElement(\`style\`);
+  style.textContent = \`
+    #sandboxButtons{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:50;display:none;flex-direction:column;gap:8px}
+    #sandboxButtons button{min-width:116px;padding:10px 14px;border:0;border-radius:12px;font:700 15px Rubik,system-ui,sans-serif;color:#fff;
+      background:#1f9e3a;box-shadow:inset 0 -4px 0 #0007,0 2px 6px #0004;cursor:pointer;touch-action:manipulation;user-select:none}
+    #sandboxButtons button:active{transform:translateY(2px);box-shadow:inset 0 -2px 0 #0007}
+    #sandboxButtons button.down{background:#b8452f}
+    #sandboxButtons button:focus-visible{outline:3px solid #fff;outline-offset:2px}\`;
+  let box = document.createElement(\`div\`);
+  box.id = \`sandboxButtons\`;
+  box.setAttribute(\`aria-label\`, \`Sandbox upgrades\`);
+  for (let [label, message, cls] of [[\`▲ Upgrade\`, \`upgrade\`, \`up\`], [\`▼ Downgrade\`, \`downgrade\`, \`down\`]]) {
+    let b = document.createElement(\`button\`);
+    b.type = \`button\`;
+    b.className = cls;
+    b.textContent = label;
+    b.title = message === \`upgrade\` ? \`Sandbox: show the next tier (Up arrow)\` : \`Sandbox: show the previous tier (Down arrow)\`;
+    for (let ev of [\`pointerdown\`, \`mousedown\`, \`touchstart\`, \`pointerup\`, \`mouseup\`, \`touchend\`])
+      b.addEventListener(ev, (e) => e.stopPropagation(), { passive: !0 });
+    b.addEventListener(\`click\`, (e) => {
+      (e.stopPropagation(), localtestSend(message), b.blur());
+    });
+    box.appendChild(b);
+  }
+  let mount = () => (document.head.appendChild(style), document.body.appendChild(box));
+  document.body ? mount() : window.addEventListener(\`DOMContentLoaded\`, mount);
+  setInterval(() => {
+    let show = !!$?.player && String($.network?.server?.regionId ?? \`\`).startsWith(\`local-\`);
+    box.style.display = show ? \`flex\` : \`none\`;
+  }, 250);
+})();
 ${END}
 `;
 

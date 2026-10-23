@@ -71,7 +71,8 @@ Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATA_DIR` (acco
 
   The bold ones are custom. `tools/make-pumpkins.py` builds their textures from ruby's 5
   rolling frames and the artwork in `custom-assets/source/`.
-- **Sandbox keys:** **Up**/**Down** step the upgrade menu through all 17 tiers, from Mouse to
+- **Sandbox buttons and keys:** the on-screen **▲ Upgrade** / **▼ Downgrade** buttons (right
+  side, shown while playing on a local server) and the **Up**/**Down** keys step the upgrade menu through all 17 tiers, from Mouse to
   Black/King Dragon. Click an animal, or press its number key (the keys reach the first nine
   cards; click the rest). In the console, `localtest.up(n)` / `localtest.down(n)` do the same.
 
