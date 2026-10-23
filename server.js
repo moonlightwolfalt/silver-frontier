@@ -8,7 +8,8 @@
 //   /api/servers            players per region, for the client's server list
 //   /__health               health check for hosts (no password needed)
 // Hosting: SITE_PASSWORD locks the whole site behind a password (site-gate.js); DATA_DIR and
-// ASSETS_DIR move the account database and downloaded assets onto a persistent volume.
+// ASSETS_DIR move the account database and downloaded assets onto a persistent volume;
+// DOWNLOAD_ASSETS=0 skips the asset download at startup.
 //   /assets/<path>          game textures: generated copy first, else mope.io (cached)
 //   /s3/<path>              s3.mope.io files (skins, translations): generated copy first, else
 //                           s3.mope.io (cached); the patched client points s3PublicUrl here
@@ -30,9 +31,10 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS = path.resolve(process.env.ASSETS_DIR ?? path.join(ROOT, "assets"));
 const DATA = path.resolve(process.env.DATA_DIR ?? path.join(ROOT, "data"));
 const gate = createGate(process.env.SITE_PASSWORD);
-// On Railway, never start without the password: the site serves mope.io's client and art.
-if (process.env.RAILWAY_PROJECT_ID && !gate) {
-  console.error("SITE_PASSWORD is not set. Add it in Railway's service variables, then redeploy.");
+// On a hosting service, never start without the password: the site serves mope.io's client and art.
+const HOST = process.env.RAILWAY_PROJECT_ID ? "Railway" : process.env.RENDER ? "Render" : null;
+if (HOST && !gate) {
+  console.error(`SITE_PASSWORD is not set. Add it in ${HOST}'s environment variables, then redeploy.`);
   process.exit(1);
 }
 const CUSTOM = path.join(ROOT, "custom-assets");
@@ -194,7 +196,9 @@ server.listen(PORT, async () => {
     animalSlugs: Object.keys(data.M),
   });
   game = { accounts, server: createGameServer({ accounts, parties: createParties() }) };
-  if (!fs.existsSync(path.join(ASSETS, "index.json"))) {
+  // DOWNLOAD_ASSETS=0 skips the up-front download (hosts without a persistent disk); files are
+  // then fetched from mope.io the first time the game asks for them.
+  if (process.env.DOWNLOAD_ASSETS !== "0" && !fs.existsSync(path.join(ASSETS, "index.json"))) {
     console.log("no assets yet, generating ...");
     try { await generate(); } catch (e) { console.error(e.message); }
   }

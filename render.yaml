@@ -1,0 +1,20 @@
+# Render Blueprint: free web service built from the Dockerfile.
+# The free plan has no persistent disk, so accounts reset whenever the service restarts, and it
+# sleeps after 15 minutes without visitors (the next visit wakes it in about a minute).
+services:
+  - type: web
+    name: silver-frontier
+    runtime: docker
+    plan: free
+    healthCheckPath: /__health
+    envVars:
+      - key: SITE_PASSWORD
+        sync: false # Render asks for it when you create the service
+      - key: OWNER_EMAILS
+        sync: false
+      - key: DOWNLOAD_ASSETS
+        value: "0"
+      - key: DATA_DIR
+        value: /tmp/data
+      - key: ASSETS_DIR
+        value: /tmp/assets

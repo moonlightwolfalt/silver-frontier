@@ -9,6 +9,21 @@ bun run setup    # fetch the mope.io client, prettify it, patch it for this serv
 bun run start    # http://localhost:3000 — everything runs on this one port
 ```
 
+## Hosting on Render (free, no card)
+
+`render.yaml` sets up a free Render web service from the Dockerfile.
+
+1. Open **https://render.com/deploy?repo=https://github.com/moonlightwolfalt/silver-frontier**
+   and sign in with GitHub.
+2. Fill in `SITE_PASSWORD` (the password visitors must enter) and `OWNER_EMAILS` (your email),
+   then **Deploy Blueprint**.
+3. When the deploy is **Live**, open the `https://….onrender.com` link and enter the password.
+
+The free plan sleeps after 15 minutes without visitors, and the next visit takes about a minute
+to wake it. It also has no persistent disk, so accounts reset when it restarts. Owner emails get
+their perks back as soon as they register again. Assets aren't pre-downloaded there; each file
+is fetched from mope.io the first time it's needed.
+
 ## Running in GitHub Codespaces (works from a phone)
 
 1. On github.com, open this repository and tap **Code → Codespaces → Create codespace on
@@ -44,7 +59,8 @@ first start it downloads the asset catalog into `/data/assets` (about 10 minutes
 playable meanwhile, because missing files are fetched from mope.io as needed.
 
 Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATA_DIR` (accounts, default
-`./data`), `ASSETS_DIR` (default `./assets`). `/__health` answers without the password.
+`./data`), `ASSETS_DIR` (default `./assets`), `DOWNLOAD_ASSETS=0` (skip the asset download at
+startup). `/__health` answers without the password.
 
 ## Hosting with Cloudflare Tunnel
 
@@ -178,6 +194,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `regions.js` | The region list |
 | `site-gate.js` | Site-wide password for hosted copies (`SITE_PASSWORD`) |
 | `Dockerfile`, `railway.json` | Railway / Docker deployment |
+| `render.yaml` | Render (free plan) |
 | `docker-compose.yml`, `.env.example` | Your own machine + Cloudflare Tunnel |
 | `.devcontainer/devcontainer.json` | GitHub Codespaces: sets up and starts the server |
 | `client-runtime.js` | Loads the client's own protocol code so the server encodes exactly like it |
