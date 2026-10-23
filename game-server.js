@@ -44,6 +44,7 @@ export const ROLES = nr;
 export const game = { T, M, Lr, D, E };
 
 let accountsRef = null; // set by createGameServer, used for equipped skins
+let recordsRef = null; // set by createGameServer: worldwide most-XP and pumpkin-goal records
 
 const clientMessages = Object.fromEntries(Object.entries(s_).map(([name, s]) => [s.encoder, name]));
 export const MAP = { x: 0, y: 0 };
@@ -146,6 +147,30 @@ function writePumpkinSync(w, e) {
   w.writeUint8(precision(e.angle, 2 * Math.PI, 8));
 }
 
+// Distance from point (px, py) to the segment (ax, ay)-(bx, by).
+function segmentDistance(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// The client's hole goal states (Tf): what a hole shows above it.
+const GOAL_STATE = { DISABLED: 0, GOAL: 1, STATS: 2, TOTAL_GOALS: 3 };
+
+// position record for a hole: 14-bit id, then ig.synchronize (B.synchronize reads nothing for
+// holes, which are static with dynamicUpdates): a "goal state changed" flag and the state.
+function writeHoleGoal(w, hole, { state, variant = 0, name = "", goals = 0, xp = 0 }) {
+  w.writeBits(hole.id, 14);
+  w.writeBoolean(true);
+  w.writeBits(state, 2);
+  if (state === GOAL_STATE.GOAL) w.writeBits(variant, 4); // 4 bits once the client is patched
+  if (state === GOAL_STATE.STATS) {
+    w.writeString(name);
+    w.writeUint16(Math.min(65535, goals));
+    w.writeUint32(Math.min(2 ** 32 - 1, xp));
+  }
+}
+
 // update message: groups of [u16 65535 - kind][u16 count] + length-prefixed records
 function updateMessage(groups) {
   const w = newWriter();
@@ -185,11 +210,13 @@ export class Lobby {
     this.players = new Set();
     this.nextId = 1;
     this.entities = new Map(); // world objects and foods, by id
-    this.moving = new Set(); // shot pumpkins still rolling
+    this.moving = new Set(); // shot or kicked pumpkins still rolling
+    this.goalShows = new Map(); // hole id -> goal display being shown
     const seed = [...(party ?? region.id)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
     const { entities, volcano } = generateWorld({ pg, E, D, cm, pm, sg, seed });
     this.volcano = volcano;
     for (const e of entities) this.addEntity(e, false);
+    this.holes = entities.filter((e) => e.type === "hole");
     this.terrainZones = entities
       .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
       .sort((a, b) => (a.type === "island" ? -1 : 0) - (b.type === "island" ? -1 : 0)); // islands win over sea
@@ -309,7 +336,29 @@ export class Lobby {
 
   sendXP(p) {
     p.xp = Math.min(MAX_XP, Math.max(0, Math.round(p.xp)));
-    p.ws.send(updateMessage([["xp", [encode("xp", { xp: p.xp, rank: 1 })]]]));
+    p.ws.send(updateMessage([["xp", [encode("xp", { xp: p.xp, rank: this.rankOf(p) })]]]));
+    if (p.animal && p.xp > 0) recordsRef?.recordXP(p);
+  }
+
+  // Players in this lobby by XP, highest first.
+  standings() {
+    return [...this.players].filter((o) => o.animal).sort((a, b) => b.xp - a.xp);
+  }
+
+  rankOf(p) {
+    return Math.min(65535, this.standings().indexOf(p) + 1 || 1);
+  }
+
+  // In-game leaderboard: the top 10 of this lobby, [u16 entity id][f64 XP] each; the client
+  // patch reads the XP as 64 bits so scores past 4.29B show. Empty slots are id 0.
+  leaderboardRecord() {
+    const top = this.standings().slice(0, 10);
+    return record((w) => {
+      for (let i = 0; i < 10; i++) {
+        w.writeUint16(top[i]?.animal.id ?? 0);
+        w.writeFloat64(top[i]?.xp ?? 0);
+      }
+    });
   }
 
   // serverMessage has no prefix byte in the client's schema: it travels inside an update.
@@ -461,7 +510,9 @@ export class Lobby {
     const a = p.animal;
     for (const e of this.entities.values()) {
       if (e.type === "pumpkin" && !this.moving.has(e) && Math.hypot(e.x - a.x, e.y - a.y) <= a.size / 2 + e.size / 2) {
-        this.collectPumpkin(p, e);
+        // Boosting into a pumpkin kicks it (it can score a goal in a hole); touching collects it.
+        if (a.boostUntil > Date.now()) this.kickPumpkin(p, e);
+        else this.collectPumpkin(p, e);
         continue;
       }
       if (e.type !== "food") continue;
@@ -484,7 +535,40 @@ export class Lobby {
     const e = this.spawnPumpkin(true, variant, { x: a.x + Math.cos(dir) * start, y: a.y + Math.sin(dir) * start });
     Object.assign(e, { vx: Math.cos(dir) * 1400, vy: Math.sin(dir) * 1400, shooter: p, angle: dir, shot: true });
     this.moving.add(e);
+    if (DEBUG) console.log(`shoot from ${Math.round(a.x)},${Math.round(a.y)} angle ${(dir * 180 / Math.PI).toFixed(1)}°`);
     return e;
+  }
+
+  kickPumpkin(p, e) {
+    const a = p.animal;
+    const dir = Math.atan2(e.y - a.y, e.x - a.x);
+    Object.assign(e, { vx: Math.cos(dir) * 1200, vy: Math.sin(dir) * 1200, shooter: p });
+    this.moving.add(e);
+  }
+
+  // A kicked or shot pumpkin that rolls into a hole is a goal for whoever sent it: the pumpkin's
+  // XP as a bonus, +1 to their worldwide goal count, and the hole shows the client's own
+  // "GOAAAAL!!!" ring, then the scorer's stats.
+  scoreGoal(e, hole) {
+    const p = e.shooter;
+    this.removeEntity(e.id);
+    if (!e.shot) setTimeout(() => this.timer && this.spawnPumpkin(), PUMPKIN_RESPAWN_MS);
+    if (!p?.animal || !this.players.has(p)) return;
+    const xp = pumpkinXP(e.subspecies, p.animal.tier, Lr.length);
+    p.goals = (p.goals ?? 0) + 1;
+    const total = recordsRef?.addGoal(p) ?? p.goals;
+    p.xp += xp;
+    this.sendXP(p);
+    this.checkProgress(p);
+    // The client turns a hole's display off 3 s after its last update, so tick() keeps resending
+    // it: the GOAL ring first, then the scorer's stats.
+    const now = Date.now();
+    this.goalShows.set(hole.id, {
+      hole, goalUntil: now + 2500, statsUntil: now + 6000,
+      goal: { state: GOAL_STATE.GOAL, variant: e.subspecies },
+      stats: { state: GOAL_STATE.STATS, name: p.name || "Unnamed", goals: total, xp },
+    });
+    this.serverMessage(p, `GOAL! ${PUMPKINS[e.subspecies].name} pumpkin +${xp.toLocaleString("en-US")} XP · ${total} goals all time`);
   }
 
   // Moves shot pumpkins; returns their position records for this tick.
@@ -495,6 +579,7 @@ export class Lobby {
         this.moving.delete(e);
         continue;
       }
+      const x0 = e.x, y0 = e.y;
       e.x = Math.min(MAP.x, Math.max(0, e.x + e.vx * dt));
       e.y = Math.min(MAP.y, Math.max(0, e.y + e.vy * dt));
       if (e.x === 0 || e.x === MAP.x) e.vx = -e.vx;
@@ -511,8 +596,16 @@ export class Lobby {
         e.vx *= -0.4;
         e.vy *= -0.4;
       }
+      // A pumpkin moves farther per tick than a hole is wide, so check this tick's whole path.
+      const hole = this.holes.find((h) => segmentDistance(h.x, h.y, x0, y0, e.x, e.y) <= h.size / 2);
+      if (hole && e.shooter) {
+        this.moving.delete(e);
+        this.scoreGoal(e, hole);
+        continue;
+      }
       records.push(record((w) => writePumpkinSync(w, e)));
       if (Math.hypot(e.vx, e.vy) < 20) {
+        if (DEBUG && e.shooter) console.log(`pumpkin stopped at ${Math.round(e.x)},${Math.round(e.y)}`);
         this.moving.delete(e);
         e.shooter = null; // now anyone, the shooter included, can collect it
       }
@@ -534,7 +627,17 @@ export class Lobby {
   tick() {
     const dt = TICK_MS / 1000;
     const minimap = ++this.ticks % 40 === 1 ? this.minimapRecord() : null; // every 2 s
+    const leaderboard = this.ticks % 20 === 1 ? this.leaderboardRecord() : null; // every 1 s
     const pumpkins = this.movePumpkins(dt);
+    if (this.ticks % 5 === 0) // goal displays, 4 times a second
+      for (const [id, show] of this.goalShows) {
+        const now = Date.now();
+        if (now > show.statsUntil || !this.entities.has(id)) {
+          this.goalShows.delete(id);
+          continue;
+        }
+        pumpkins.push(record((w) => writeHoleGoal(w, show.hole, now < show.goalUntil ? show.goal : show.stats)));
+      }
     const records = [];
     for (const p of this.players) {
       const a = p.animal;
@@ -549,6 +652,7 @@ export class Lobby {
       if (p.ws.readyState !== 1) continue;
       const groups = [["position", [...records, ...pumpkins]]];
       if (minimap) groups.push(["minimap", [minimap]]);
+      if (leaderboard) groups.push(["leaderboard", [leaderboard]]);
       // The client's camera starts at Infinity and only snaps into place on a camera update.
       const focus = p.animal ?? p.camera;
       if (focus)
@@ -556,7 +660,7 @@ export class Lobby {
           x: precision(focus.x, MAP.x, 16), y: precision(focus.y, MAP.y, 16), zoom: precision(p.zoom ?? 1, 15, 8),
         })]]);
       // Always send something so the client's silence watchdog stays happy.
-      p.ws.send(records.length || pumpkins.length || focus || minimap ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
+      p.ws.send(records.length || pumpkins.length || focus || minimap || leaderboard ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
     }
   }
 
@@ -568,8 +672,9 @@ export class Lobby {
 
 // ---------- server ----------
 
-export function createGameServer({ accounts, parties }) {
+export function createGameServer({ accounts, records = null, parties }) {
   accountsRef = accounts;
+  recordsRef = records;
   const lobbies = new Map(REGIONS.map((r) => [r.id, new Lobby(r)]));
   const wss = new WebSocketServer({
     noServer: true,
@@ -608,7 +713,7 @@ export function createGameServer({ accounts, parties }) {
     } catch (e) {
       return DEBUG && console.warn(`bad ${name} message:`, e.message);
     }
-    const ctx = { lobby, player: p, allPlayers, lobbies, encode, game, MAP, ROLES: nr, accounts };
+    const ctx = { lobby, player: p, allPlayers, lobbies, encode, game, MAP, ROLES: nr, accounts, records };
     switch (name) {
       case "ping":
         return p.ws.send(new Uint8Array([St.pong.encoder]));

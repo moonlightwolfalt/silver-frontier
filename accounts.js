@@ -19,7 +19,7 @@ const SESSION_DAYS = 30;
 const ROLE = { USER: 0, MODERATOR: 1, TRUSTED_MODERATOR: 2, EVENT_TEAM: 3, ADMIN: 4, DEVELOPER: 5 };
 const RARITIES = ["common", "uncommon", "rare", "epic", "legendary", "mythic"];
 
-export function createAccounts({ dataDir, itemIds = [], animalSlugs = [] }) {
+export function createAccounts({ dataDir, itemIds = [], animalSlugs = [], records = null }) {
   fs.mkdirSync(dataDir, { recursive: true });
   const dbFile = path.join(dataDir, "accounts.json");
   const configFile = path.join(dataDir, "config.json");
@@ -338,6 +338,14 @@ export function createAccounts({ dataDir, itemIds = [], animalSlugs = [] }) {
       if (route.startsWith("/notifications")) return json(res, 200, method === "GET" ? [] : { ok: true });
       if (route === "/passes/running") return json(res, 200, []);
       if (route === "/quests/active") return json(res, 200, []);
+      // Worldwide boards (records.js): most XP and pumpkin goals, for the menu Leaderboard.
+      if (records && route.startsWith("/stats/catalogue")) return json(res, 200, records.catalogue());
+      if (records && (m = route.match(/^\/stats\/board\/([\w-]+)(\/me)?(?:\?|$)/))) {
+        const q = new URL(route, "http://x").searchParams;
+        if (m[2]) return json(res, 200, acc ? records.mine(m[1], q.get("period"), acc.id) : { rank: null, estimated: false, total: 0, entries: [] });
+        const board = records.board(m[1], q.get("period"), Math.min(100, Number(q.get("limit")) || 50));
+        return board ? json(res, 200, board) : json(res, 404, { message: "No such board" });
+      }
       if (route.startsWith("/stats/bestiary/global")) return json(res, 200, { variants: [] });
       if (route.startsWith("/stats/bestiary")) return json(res, 200, { animals: [], huntPins: [] });
       if (route.startsWith("/stats/achievements")) return json(res, 200, { achievements: [] });

@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import { CATEGORIES, generate as generateAssets } from "./asset-catalog.js";
 import { createAccounts } from "./accounts.js";
 import { createGate } from "./site-gate.js";
+import { createRecords } from "./records.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -206,12 +207,14 @@ server.listen(PORT, async () => {
   console.log(`http://localhost:${PORT}${gate ? " (password protected)" : ""} · version ${VERSION}`);
   if (!fs.existsSync(path.join(SITE, "index.html"))) return console.log("client not fetched yet; run: bun run setup");
   const [{ createGameServer, game: data }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
+  const records = createRecords({ dataDir: DATA });
   const accounts = createAccounts({
+    records,
     dataDir: DATA,
     itemIds: await loadItemIds(),
     animalSlugs: Object.keys(data.M),
   });
-  game = { accounts, server: createGameServer({ accounts, parties: createParties() }) };
+  game = { accounts, server: createGameServer({ accounts, records, parties: createParties() }) };
   // DOWNLOAD_ASSETS=0 skips the up-front download (hosts without a persistent disk); files are
   // then fetched from mope.io the first time the game asks for them.
   if (process.env.DOWNLOAD_ASSETS !== "0" && !fs.existsSync(path.join(ASSETS, "index.json"))) {

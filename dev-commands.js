@@ -13,6 +13,7 @@ import { MAX_XP } from "./limits.js";
 
 const COMMANDS = {
   help: { role: 0, usage: "/help", run: help },
+  top: { role: 0, usage: "/top  (worldwide records)", run: top },
   players: { role: 1, usage: "/players", run: players },
   animal: { role: 4, usage: "/animal <name> [subspecies]", run: animal },
   tier: { role: 4, usage: "/tier <1-17>  (opens that tier's upgrade menu)", run: tier },
@@ -22,6 +23,8 @@ const COMMANDS = {
   zoom: { role: 4, usage: "/zoom <0.2-15>", run: zoom },
   god: { role: 4, usage: "/god  (toggle)", run: god },
   tp: { role: 4, usage: "/tp <x> <y> | /tp <player>", run: tp },
+  face: { role: 4, usage: "/face <degrees>  (0 = right, 90 = down; aims /shoot)", run: face },
+  pos: { role: 1, usage: "/pos  (your position, and the nearest hole)", run: pos },
   bring: { role: 4, usage: "/bring <player>", run: bring },
   spawn: { role: 4, usage: "/spawn <food> [count]", run: spawnFood },
   shoot: { role: 4, usage: "/shoot [variant] [count]  (fires pumpkins the way you face; default random variant)", run: shoot },
@@ -77,6 +80,15 @@ function help(ctx) {
   reply(ctx, lines.join("  ·  "));
 }
 
+function top(ctx) {
+  const xp = ctx.records?.top("most_xp");
+  const goals = ctx.records?.top("pumpkin_goals");
+  reply(ctx, [
+    `Most XP worldwide: ${xp ? `${xp.name} (${xp.value.toLocaleString("en-US")} XP)` : "nobody yet"}`,
+    `Most pumpkin goals: ${goals ? `${goals.name} (${goals.value})` : "nobody yet"}`,
+  ].join("  ·  "));
+}
+
 function players(ctx) {
   const list = ctx.allPlayers().filter((p) => p.animal);
   reply(ctx, list.map((p) => `${p.animal.id}:${p.name || "(no name)"} [${p.lobby.region.id}] ${p.animal.slug}`).join(", ") || "nobody is playing");
@@ -122,6 +134,19 @@ function god(ctx) {
 function moveAnimal(a, x, y) {
   a.x = x;
   a.y = y;
+}
+
+function face(ctx, [deg]) {
+  const a = needAnimal(ctx);
+  a.angle = ((((Number(deg) || 0) % 360) + 360) % 360) * (Math.PI / 180);
+  a.vx = a.vy = 0;
+  ctx.player.target = { x: a.x, y: a.y };
+}
+
+function pos(ctx) {
+  const a = needAnimal(ctx);
+  const hole = [...ctx.lobby.holes].sort((h1, h2) => Math.hypot(h1.x - a.x, h1.y - a.y) - Math.hypot(h2.x - a.x, h2.y - a.y))[0];
+  reply(ctx, `You: ${Math.round(a.x)}, ${Math.round(a.y)}` + (hole ? `  ·  nearest hole: ${Math.round(hole.x)}, ${Math.round(hole.y)}` : ""));
 }
 
 function tp(ctx, [a, b]) {

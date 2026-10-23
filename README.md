@@ -160,7 +160,15 @@ an allowed email before the site loads (free for up to 50 users).
   | **Black Hole** | 0.3% | 2M |
   | Onyx | 0.2% | 2.5M |
 
-  The bold ones are custom. `tools/make-pumpkins.py` builds their textures from ruby's 5
+  The bold ones are custom.
+- **Pumpkin goals:** boost into a pumpkin to kick it, or `/shoot` one, and roll it into a hole.
+  A goal gives the shooter the pumpkin's XP, the hole shows "GOAAAAL!!!" and then the scorer's
+  name, all-time goal count and bonus XP, and chat announces it.
+- **Leaderboards:** the in-game top 10 (top left) ranks everyone in your world by XP. The menu
+  **Leaderboard** tile has two worldwide boards, **Most XP** (the highest XP each player has
+  reached) and **Pumpkin goals**, each for this week, this month and all time. They cover every
+  region and party, and are saved in `data/records.json`. Signed-in players are tracked by
+  account, guests by name. `/top` prints the all-time leaders in chat. `tools/make-pumpkins.py` builds their textures from ruby's 5
   rolling frames and the artwork in `custom-assets/source/`.
 - **Sandbox buttons and keys:** the on-screen **▲ Upgrade** / **▼ Downgrade** buttons (right
   side, shown while playing on a local server) and the **Up**/**Down** keys step the upgrade menu through all 17 tiers, from Mouse to
@@ -188,11 +196,11 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 
 | Command | Role |
 | --- | --- |
-| `/help` | everyone |
+| `/help`, `/top` | everyone |
 | `/players`, `/kick <player>` | moderator |
 | `/ban <player> [minutes]`, `/unban <email>` | trusted moderator |
 | `/announce <message>` | event team |
-| `/shoot [variant] [count]` fires pumpkins the way you face (they roll, stop and can be collected; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
+| `/shoot [variant] [count]` fires pumpkins the way you face (they roll, stop and can be collected; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole), `/face <degrees>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
 | `/coins <n> [email]`, `/gems <n> [email]`, `/role <email> <0-5>` | developer |
 
 ## Files
@@ -206,6 +214,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `world.js` | Generates each lobby's terrain and foods |
 | `pumpkins.js`, `tools/make-pumpkins.py`, `custom-assets/` | Pumpkin variants, their chances and XP, and the custom textures |
 | `parties.js` | Party lobbies and invite codes |
+| `records.js` | Worldwide Most XP and Pumpkin goals boards (weekly, monthly, all time) |
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
 | `dev-commands.js` | Chat commands and the client's staff tools |
 | `regions.js` | The region list |

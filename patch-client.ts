@@ -57,6 +57,7 @@ globalThis.localtest = {
   downgrade: () => localtestSend(\`downgrade\`),
   up: (n = 1) => localtestSend(\`upgrade\`, n),
   down: (n = 1) => localtestSend(\`downgrade\`, n),
+  mapBounds: () => ({ x: $.map.bounds.max.x, y: $.map.bounds.max.y }), // for checking the server's MAP
 };
 // On-screen sandbox buttons: the same messages as the Up/Down binds. Shown only while playing
 // on a local server; presses don't reach the game's own pointer handlers (no accidental boost).
@@ -140,6 +141,18 @@ const edits: [string, string, string?][] = [
   [
     "(ba.xp.label = F(Ea ? `hud:stats.bar.xpBarTop` : `hud:stats.bar.xpBar`, {",
     "(ba.xp.label = Ea\n      ? `${i} ${F(`hud:stats.xp`)} / ${a} ${F(`hud:stats.xp`)}`\n      : F(`hud:stats.bar.xpBar`, {",
+  ],
+  // In-game leaderboard XP as 64 bits (scores past 4.29B), and the hole goal ring's pumpkin
+  // variant as 4 bits (our extra pumpkins are 7-10).
+  [
+    "let i = e.readUint16(),\n        a = e.readUint32();\n      if ((i === $.playerID",
+    "let i = e.readUint16(),\n        a = e.readFloat64();\n      if ((i === $.playerID",
+  ],
+  ["this.initGoal(e.readBits(3));", "this.initGoal(e.readBits(4));"],
+  // The menu Leaderboard opens on the all-time Most XP board (records.js).
+  [
+    "var Q = e({ open: !1, period: `weekly`, statKey: `players_eaten`, chains: !1 });",
+    "var Q = e({ open: !1, period: `all-time`, statKey: `most_xp`, chains: !1 });",
   ],
   // Only our regions: the Mope directory is never asked.
   [
