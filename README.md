@@ -9,6 +9,19 @@ bun run setup    # fetch the mope.io client, prettify it, patch it for this serv
 bun run start    # http://localhost:3000 — everything runs on this one port
 ```
 
+## Running in GitHub Codespaces (works from a phone)
+
+1. On github.com, open this repository and tap **Code → Codespaces → Create codespace on
+   main**. On a phone, use Safari's **aA → Request Desktop Website** if the button is hidden.
+2. Wait for setup to finish. The first start takes a few minutes while it installs and patches
+   the client. The server then starts on its own, and again every time the codespace resumes.
+3. Open the **Ports** tab, then the globe icon (Open in Browser) next to port 3000. The link
+   only works for your GitHub account, because Codespaces ports are private by default.
+
+For the owner account, add a Codespaces secret named `OWNER_EMAILS` with your email (GitHub
+**Settings → Codespaces → Secrets**, allowed for this repository) before creating the codespace.
+Codespaces stops after 30 minutes without activity, and free accounts get 60 hours a month.
+
 ## Hosting on Railway
 
 The repo includes a `Dockerfile` and `railway.json`. The build fetches and patches the mope.io
@@ -166,6 +179,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `site-gate.js` | Site-wide password for hosted copies (`SITE_PASSWORD`) |
 | `Dockerfile`, `railway.json` | Railway / Docker deployment |
 | `docker-compose.yml`, `.env.example` | Your own machine + Cloudflare Tunnel |
+| `.devcontainer/devcontainer.json` | GitHub Codespaces: sets up and starts the server |
 | `client-runtime.js` | Loads the client's own protocol code so the server encodes exactly like it |
 | `asset-catalog.js` | Lists every asset from the client's tables and downloads it into `assets/<Category>/` |
 
