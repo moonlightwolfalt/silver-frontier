@@ -24,6 +24,7 @@ import { createAccounts } from "./accounts.js";
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS = path.join(ROOT, "assets");
+const CUSTOM = path.join(ROOT, "custom-assets");
 const DUMP = path.join(ROOT, "mope-dump/site");
 const SITE = path.join(DUMP, "mope.io");
 const TYPES = {
@@ -151,6 +152,9 @@ const server = http.createServer(async (req, res) => {
     return serveCached(res, path.join(DUMP, "s3.mope.io"), p.slice("/s3/".length), source + url.search);
   }
   if (p.startsWith("/assets/")) {
+    // Our own art (extra pumpkin variants) first, then the generated copy of mope.io's.
+    const custom = path.normalize(path.join(CUSTOM, p.slice("/assets/".length)));
+    if (custom.startsWith(CUSTOM + path.sep) && fs.existsSync(custom)) return send(res, custom, fs.readFileSync(custom));
     const local = generatedFile(`https://mope.io${p}`);
     if (local && fs.existsSync(local)) return send(res, local, fs.readFileSync(local));
   }

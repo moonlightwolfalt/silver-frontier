@@ -21,6 +21,27 @@ bun run start    # http://localhost:3000 — everything runs on this one port
 - **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier (the game's own
   table, 100 XP for tier 2 up to 10M for tier 17) the upgrade menu opens with that tier's
   animals. Each tier takes about 30 foods.
+- **Pumpkins:** 45 per world on land, arctic and desert. Touching one collects it for XP, and a
+  new one appears 30 s later. Rare ones (gold and up) show on the minimap. `pumpkins.js` sets
+  every variant's spawn chance and XP at tier 17 (lower tiers get a share scaled by the tier's
+  XP requirement):
+
+  | Variant | Chance | XP at tier 17 |
+  | --- | --- | --- |
+  | Pumpkin | 48% | 20K |
+  | Jack-o'-lantern | 25% | 50K |
+  | Gold | 12% | 150K |
+  | Emerald | 6% | 300K |
+  | **Amber** | 3.5% | 400K |
+  | **Sapphire** | 2.2% | 550K |
+  | Ruby | 1.4% | 445K |
+  | **Amethyst** | 0.9% | 800K |
+  | Diamond | 0.5% | 1.2M |
+  | **Black Hole** | 0.3% | 2M |
+  | Onyx | 0.2% | 2.5M |
+
+  The bold ones are custom. `tools/make-pumpkins.py` builds their textures from ruby's 5
+  rolling frames and the artwork in `custom-assets/source/`.
 - **Sandbox keys:** **Up**/**Down** step the upgrade menu through all 17 tiers, from Mouse to
   Black/King Dragon. Click an animal, or press its number key (the keys reach the first nine
   cards; click the rest). In the console, `localtest.up(n)` / `localtest.down(n)` do the same.
@@ -59,6 +80,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `server.js` | HTTP server: client, assets, `/api` accounts, `/play` game sockets |
 | `game-server.js` | Game protocol and lobbies (spawn, move, eat, upgrades, chat) |
 | `world.js` | Generates each lobby's terrain and foods |
+| `pumpkins.js`, `tools/make-pumpkins.py`, `custom-assets/` | Pumpkin variants, their chances and XP, and the custom textures |
 | `parties.js` | Party lobbies and invite codes |
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
 | `dev-commands.js` | Chat commands and the client's staff tools |

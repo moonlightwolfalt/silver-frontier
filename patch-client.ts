@@ -4,6 +4,7 @@
 //     PARTY server at ws(s)://<this host>/play/<region>[/new] (no Mope directory or Turnstile);
 //     player counts come from /api/servers
 //   - the account API (axisURL) and skin/translation files (s3PublicUrl) point at this server
+//   - extra pumpkin variants from pumpkins.js (textures, a 4-bit variant id, minimap colours)
 //   - globalThis.localtest.{upgrade,downgrade,up,down}: console helpers that send the same
 //     `upgrade`/`downgrade` messages as the arrow-key binds while on a local server
 // Files are found by content (their hashed names change on every Mope deploy). Re-running is
@@ -11,6 +12,7 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REGIONS } from "./regions.js";
+import { PUMPKINS, PUMPKIN_COLOURS } from "./pumpkins.js";
 
 const dir = process.argv[2] ?? "mope-dump/site/mope.io";
 const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith(".js")).map((f) => join(dir, f));
@@ -64,6 +66,21 @@ const edits: [string, string, string?][] = [
   ["production: { ads: !0, s3PublicUrl: `https://s3.mope.io/mope-prod` }", "production: { ads: !0, s3PublicUrl: `${location.origin}/s3/mope-prod` }"],
   ["production: { axisURL: `https://api.mope.io` }", "production: { axisURL: `${location.origin}/api` }"],
   ["var H = n({\n  username: ``,", HELPERS + "var H = n({\n  username: ``,", BEGIN],
+  // Pumpkin variants: texture folder per id, 4 bits for 11 variants, names, minimap colours.
+  [
+    "`terrain/pumpkin/${[`normal`, `jack`, `gold`, `emerald`, `ruby`, `diamond`, `onyx`][this.subspecies]}`",
+    `\`terrain/pumpkin/\${[${PUMPKINS.map((p) => "`" + p.id + "`").join(", ")}][this.subspecies]}\``,
+  ],
+  ["e instanceof x && (this.subspecies = e.readBits(3)),", "e instanceof x && (this.subspecies = e.readBits(4)),"],
+  [
+    "(e[(e.ONYX = 6)] = `ONYX`),",
+    "(e[(e.ONYX = 6)] = `ONYX`)," +
+      PUMPKINS.slice(7).map((p, i) => `(e[(e.${p.id.toUpperCase()} = ${i + 7})] = \`${p.id.toUpperCase()}\`),`).join(""),
+  ],
+  [
+    "var ng = [`#ffa500`, `#deb887`, `#ffd700`, `#6adb41`, `#e4384c`, `#38e4e1`],",
+    `var ng = [${PUMPKIN_COLOURS.map((c) => "`" + c + "`").join(", ")}],`,
+  ],
   // Only our regions: the Mope directory is never asked.
   [
     "let { servers: t, regions: n, stats: r, playerCount: i } = await Nl(e);",

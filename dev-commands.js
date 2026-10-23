@@ -8,6 +8,8 @@
 // Roles (the client's own enum): USER 0, MODERATOR 1, TRUSTED_MODERATOR 2, EVENT_TEAM 3, ADMIN 4,
 // DEVELOPER 5. Each command lists the lowest role allowed to run it.
 
+import { PUMPKINS } from "./pumpkins.js";
+
 const COMMANDS = {
   help: { role: 0, usage: "/help", run: help },
   players: { role: 1, usage: "/players", run: players },
@@ -21,6 +23,7 @@ const COMMANDS = {
   tp: { role: 4, usage: "/tp <x> <y> | /tp <player>", run: tp },
   bring: { role: 4, usage: "/bring <player>", run: bring },
   spawn: { role: 4, usage: "/spawn <food> [count]", run: spawnFood },
+  pumpkin: { role: 4, usage: "/pumpkin <variant> [count]  (normal jack gold emerald amber sapphire ruby amethyst diamond black_hole onyx)", run: pumpkin },
   clearfood: { role: 4, usage: "/clearfood", run: clearFood },
   kill: { role: 4, usage: "/kill [player]", run: kill },
   kick: { role: 1, usage: "/kick <player>", run: kick },
@@ -148,6 +151,17 @@ function spawnFood(ctx, [name, count]) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 120;
     ctx.lobby.addEntity({ type: "food", species: D[name], biome: me.biomeHere ?? E.land, x: me.x + Math.cos(a) * d, y: me.y + Math.sin(a) * d, size: 20 });
+  }
+}
+
+function pumpkin(ctx, [name, count]) {
+  const variant = PUMPKINS.findIndex((p) => p.id === String(name).toLowerCase());
+  if (variant < 0) throw new Error(`no pumpkin "${name}"`);
+  const me = needAnimal(ctx);
+  const n = Math.min(20, Math.max(1, Number(count) || 1));
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    ctx.lobby.spawnPumpkin(true, variant, { x: me.x + Math.cos(a) * 140, y: me.y + Math.sin(a) * 140 });
   }
 }
 

@@ -17,11 +17,14 @@ import { findClientChunk, loadClient } from "./client-runtime.js";
 import { REGIONS } from "./regions.js";
 import { generateWorld } from "./world.js";
 import { runCommand } from "./dev-commands.js";
+import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(ROOT, "mope-dump/site/mope.io");
 const DEBUG = !!process.env.DEBUG;
 const TICK_MS = 50;
+const PUMPKIN_COUNT = 45;
+const PUMPKIN_RESPAWN_MS = 30_000;
 
 const client = loadClient(findClientChunk(CLIENT_DIR, "var M = zr({"));
 const S = client.get("S");
@@ -92,6 +95,9 @@ function writeInit(w, e) {
       break;
     case "river":
       w.writeUint16(e.height); // rivers carry their length and width
+      break;
+    case "pumpkin":
+      w.writeBits(e.subspecies, 4); // 4 bits once patch-client.ts has added our variants
       break;
   }
   w.writeUint32(0); // padding for type/species-specific extras
@@ -167,7 +173,36 @@ export class Lobby {
     const { entities, volcano } = generateWorld({ pg, E, D, cm, pm, sg, seed });
     this.volcano = volcano;
     for (const e of entities) this.addEntity(e, false);
+    this.rand = (() => { let x = seed; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32); })();
+    for (let i = 0; i < PUMPKIN_COUNT; i++) this.spawnPumpkin(false);
+    this.ticks = 0;
     this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  // A pumpkin somewhere on land, arctic or desert, with a variant picked by spawn chance.
+  spawnPumpkin(announce = true, variant = pickPumpkin(), at) {
+    const b = pg.biomes;
+    const area = at ? null : [b.land, b.land, b.land, b.arctic, b.desert][Math.floor(this.rand() * 5)];
+    const x = at?.x ?? area.x + (this.rand() - 0.5) * (area.width - 300);
+    const y = at?.y ?? area.y + (this.rand() - 0.5) * (area.height - 300);
+    return this.addEntity({
+      type: "pumpkin", species: 0, subspecies: variant, biome: E[biomeAt(x, y)], x, y, size: 60, angle: this.rand() * Math.PI * 2,
+    }, announce);
+  }
+
+  // Minimap markers for the rare pumpkins (gold and up), like mope.io shows them.
+  minimapRecord() {
+    const rare = [...this.entities.values()].filter((e) => e.type === "pumpkin" && e.subspecies >= 2).slice(0, 255);
+    return record((w) => {
+      w.writeUint8(rare.length);
+      for (const e of rare) {
+        w.writeUint16(e.id);
+        w.writeBoolean(true, true); // read as a whole byte
+        w.writeUint16(precision(e.x, MAP.x, 16));
+        w.writeUint16(precision(e.y, MAP.y, 16));
+        w.writeUint8(e.subspecies);
+      }
+    });
   }
 
   get playerCount() {
@@ -296,6 +331,10 @@ export class Lobby {
   eat(p) {
     const a = p.animal;
     for (const e of this.entities.values()) {
+      if (e.type === "pumpkin" && Math.hypot(e.x - a.x, e.y - a.y) <= a.size / 2 + e.size / 2) {
+        this.collectPumpkin(p, e);
+        continue;
+      }
       if (e.type !== "food") continue;
       if (Math.hypot(e.x - a.x, e.y - a.y) > a.size / 2 + e.size / 2) continue;
       this.removeEntity(e.id);
@@ -307,8 +346,20 @@ export class Lobby {
     }
   }
 
+  // Touching a pumpkin collects it: XP by variant and tier, then a new one spawns elsewhere.
+  collectPumpkin(p, e) {
+    const xp = pumpkinXP(e.subspecies, p.animal.tier, Lr);
+    this.removeEntity(e.id);
+    p.xp += xp;
+    this.sendXP(p);
+    this.serverMessage(p, `${PUMPKINS[e.subspecies].name} pumpkin! +${xp.toLocaleString("en-US")} XP`);
+    setTimeout(() => this.timer && this.spawnPumpkin(), PUMPKIN_RESPAWN_MS);
+    this.checkProgress(p);
+  }
+
   tick() {
     const dt = TICK_MS / 1000;
+    const minimap = ++this.ticks % 40 === 1 ? this.minimapRecord() : null; // every 2 s
     const records = [];
     for (const p of this.players) {
       const a = p.animal;
@@ -327,6 +378,7 @@ export class Lobby {
     for (const p of this.players) {
       if (p.ws.readyState !== 1) continue;
       const groups = [["position", records]];
+      if (minimap) groups.push(["minimap", [minimap]]);
       // The client's camera starts at Infinity and only snaps into place on a camera update.
       const focus = p.animal ?? p.camera;
       if (focus)
@@ -334,7 +386,7 @@ export class Lobby {
           x: precision(focus.x, MAP.x, 16), y: precision(focus.y, MAP.y, 16), zoom: precision(p.zoom ?? 1, 15, 8),
         })]]);
       // Always send something so the client's silence watchdog stays happy.
-      p.ws.send(records.length || focus ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
+      p.ws.send(records.length || focus || minimap ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
     }
   }
 
