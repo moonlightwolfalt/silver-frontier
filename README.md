@@ -60,7 +60,9 @@ playable meanwhile, because missing files are fetched from mope.io as needed.
 
 Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATA_DIR` (accounts, default
 `./data`), `ASSETS_DIR` (default `./assets`), `DOWNLOAD_ASSETS=0` (skip the asset download at
-startup). `/__health` answers without the password.
+startup). `/__health` answers without the password and shows the running commit (`ok 1a2b3c4`),
+so you can check a deploy is up to date. The page and scripts are sent with
+`Cache-Control: no-store`, so a redeploy reaches players on their next visit.
 
 ## Hosting with Cloudflare Tunnel
 

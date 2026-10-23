@@ -76,10 +76,26 @@ const json = (res, code, body) => {
   res.end(JSON.stringify(body));
 };
 
+// The page and its scripts are never reused from the browser cache, so a redeploy (a new client
+// patch) reaches players on their next visit instead of an old cached copy.
 const send = (res, file, data) => {
-  res.writeHead(200, { "Content-Type": typeOf(file) });
+  const fresh = /\.(html|js|css|json)$/i.test(file) ? { "Cache-Control": "no-store" } : {};
+  res.writeHead(200, { "Content-Type": typeOf(file), ...fresh });
   res.end(data);
 };
+
+// Which commit is running, for checking a deploy: hosts provide it, a git checkout knows it.
+const VERSION = (() => {
+  const fromHost = process.env.RENDER_GIT_COMMIT ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA;
+  if (fromHost) return fromHost.slice(0, 7);
+  try {
+    const head = fs.readFileSync(path.join(ROOT, ".git/HEAD"), "utf8").trim();
+    const ref = head.startsWith("ref: ") ? fs.readFileSync(path.join(ROOT, ".git", head.slice(5)), "utf8").trim() : head;
+    return ref.slice(0, 7);
+  } catch {
+    return "unknown";
+  }
+})();
 
 // Serves a file from the local cache, or fetches it from upstream and caches it. mope.io answers
 // unknown paths with its index.html, so an HTML reply to a non-HTML path counts as missing.
@@ -131,7 +147,7 @@ const server = http.createServer(async (req, res) => {
   const p = decodeURIComponent(url.pathname);
   const origin = `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers.host}`;
 
-  if (p === "/__health") { res.writeHead(200, { "Content-Type": "text/plain" }); return res.end("ok"); }
+  if (p === "/__health") { res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }); return res.end(`ok ${VERSION}`); }
   if (gate && (await gate.handle(req, res, p))) return;
 
   if (p === "/gallery") { res.writeHead(200, { "Content-Type": TYPES[".html"] }); return res.end(PAGE); }
@@ -187,7 +203,7 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 server.listen(PORT, async () => {
-  console.log(`http://localhost:${PORT}${gate ? " (password protected)" : ""}`);
+  console.log(`http://localhost:${PORT}${gate ? " (password protected)" : ""} · version ${VERSION}`);
   if (!fs.existsSync(path.join(SITE, "index.html"))) return console.log("client not fetched yet; run: bun run setup");
   const [{ createGameServer, game: data }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
   const accounts = createAccounts({

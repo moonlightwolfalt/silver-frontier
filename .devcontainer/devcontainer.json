@@ -2,9 +2,14 @@
   "name": "silver-frontier",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
   "postCreateCommand": "npm install -g bun@1.4.2 && bun install && bun run setup",
-  "postStartCommand": "nohup bash -c 'node server.js > /tmp/server.log 2>&1 &'",
-  "forwardPorts": [3000],
+  "postStartCommand": "nohup bash -c 'bun run patch-client.ts && node server.js > /tmp/server.log 2>&1 &'",
+  "forwardPorts": [
+    3000
+  ],
   "portsAttributes": {
-    "3000": { "label": "mope.io server", "onAutoForward": "notify" }
+    "3000": {
+      "label": "mope.io server",
+      "onAutoForward": "notify"
+    }
   }
 }
