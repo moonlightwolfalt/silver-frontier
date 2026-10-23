@@ -21,6 +21,11 @@ bun run start    # http://localhost:3000 — everything runs on this one port
 - **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier (the game's own
   table, 100 XP for tier 2 up to 10M for tier 17) the upgrade menu opens with that tier's
   animals. Each tier takes about 30 foods.
+- **Size:** every animal grows from its tier's minimum to maximum size as its XP goes from
+  that tier's requirement to the next tier's, using the client's own size table, including
+  forms with their own range. Tier 17 grows from 10M to 20M. Losing XP shrinks it again, and
+  upgrading starts the new animal at its tier's minimum. `/size <n>` pins a size and
+  `/size auto` hands it back to XP.
 - **Pumpkins:** 45 per world on land, arctic and desert. Touching one collects it for XP, and a
   new one appears 30 s later. Rare ones (gold and up) show on the minimap. `pumpkins.js` sets
   every variant's spawn chance and XP at tier 17. Each lower tier gets half of the tier above

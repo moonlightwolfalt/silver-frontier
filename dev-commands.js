@@ -16,7 +16,7 @@ const COMMANDS = {
   animal: { role: 4, usage: "/animal <name> [subspecies]", run: animal },
   tier: { role: 4, usage: "/tier <1-17>  (opens that tier's upgrade menu)", run: tier },
   xp: { role: 4, usage: "/xp <amount>  (upgrades follow, up to tier 17 at 10M)", run: xp },
-  size: { role: 4, usage: "/size <size>", run: size },
+  size: { role: 4, usage: "/size <size> | /size auto  (auto: size follows XP)", run: size },
   speed: { role: 4, usage: "/speed <multiplier>", run: speed },
   zoom: { role: 4, usage: "/zoom <0.2-15>", run: zoom },
   god: { role: 4, usage: "/god  (toggle)", run: god },
@@ -100,7 +100,8 @@ function xp(ctx, [n]) {
 }
 
 function size(ctx, [n]) {
-  needAnimal(ctx).size = Math.min(256, Math.max(5, Number(n) || 30));
+  needAnimal(ctx);
+  ctx.player.fixedSize = n === "auto" ? null : Math.min(256, Math.max(5, Number(n) || 30));
 }
 
 function speed(ctx, [n]) {

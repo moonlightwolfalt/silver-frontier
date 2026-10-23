@@ -263,7 +263,7 @@ export class Lobby {
       tier: Lr.findIndex((t) => t.animals.includes(T[slug])) + 1,
       biome: E[home] ?? E.land,
       biomeHere: E[home] ?? E.land,
-      size: (cfg.minimumSize + cfg.maximumSize) / 2,
+      size: cfg.minimumSize,
       x: spawn.x, y: spawn.y, angle: 0,
       name: p.name,
       skin: p.skinOverride ?? accountsRef?.equippedSkin(p.account, slug) ?? "",
@@ -278,6 +278,7 @@ export class Lobby {
     const prev = p.animal;
     p.animal = this.makeAnimal(p, slug, subspecies, prev && { x: prev.x, y: prev.y });
     p.target = { x: p.animal.x, y: p.animal.y };
+    p.animal.size = this.targetSize(p); // a new animal starts at the size its XP calls for
     this.broadcast(
       updateMessage([
         ["createEntity", [record((w) => writeInit(w, p.animal))]],
@@ -319,6 +320,25 @@ export class Lobby {
       subspecies: p.menu.map(() => 0),
       equippedItemIds: p.menu.map((slug) => accountsRef?.equippedSkin(p.account, slug) ?? ""),
     }));
+  }
+
+  // An animal's size range, using its form's own range when the client defines one.
+  sizeRange(a) {
+    const cfg = M[a.slug];
+    const form = cfg.subspeciesOverrides?.get?.(a.subspecies) ?? {};
+    return [form.minimumSize ?? cfg.minimumSize, form.maximumSize ?? cfg.maximumSize];
+  }
+
+  // Size grows from the minimum at the tier's XP requirement to the maximum at the next tier's
+  // (tier 17: from 10M to 20M), and shrinks again when XP goes down. /size pins it instead.
+  targetSize(p) {
+    const a = p.animal;
+    if (p.fixedSize) return p.fixedSize;
+    const [min, max] = this.sizeRange(a);
+    const from = Lr[a.tier - 1].requiredXP;
+    const to = Lr[a.tier]?.requiredXP ?? from * 2;
+    const progress = Math.min(1, Math.max(0, (p.xp - from) / (to - from)));
+    return min + (max - min) * progress;
   }
 
   // Highest tier (1-17) the player's XP has reached, from the client's own XP table (Lr[i] is
@@ -434,6 +454,9 @@ export class Lobby {
         a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[biomeAt(a.x, a.y)];
         this.eat(p);
       }
+      // ease toward the size XP calls for, so growing and shrinking animate
+      const target = this.targetSize(p);
+      a.size += Math.abs(target - a.size) < 0.05 ? target - a.size : (target - a.size) * 0.15;
       records.push(record((w) => writeAnimalSync(w, a)));
     }
     for (const p of this.players) {
@@ -506,6 +529,7 @@ export function createGameServer({ accounts, parties }) {
       case "startGameSession": {
         p.name = (msg.name || p.account?.displayName || "").slice(0, 32);
         p.xp = 0;
+        p.fixedSize = null;
         p.spawnedAt = Date.now();
         // Invite links carry the party code; join that party if it isn't the one we're in.
         let target = lobby;
