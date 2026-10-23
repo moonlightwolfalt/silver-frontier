@@ -124,9 +124,11 @@ an allowed email before the site loads (free for up to 50 users).
 - **XP cap:** 10 trillion (`limits.js`). mope.io sends XP as a 32-bit number, which stops at
   4.29 billion, so the client patch turns it into a 64-bit value. At tier 17 the XP bar shows
   progress toward the cap ("1.5B XP / 10T XP"), filled on the same log scale as the growth.
-- **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier (the game's own
-  table, 100 XP for tier 2 up to 10M for tier 17) the upgrade menu opens with that tier's
-  animals. Each tier takes about 30 foods.
+- **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier the upgrade menu
+  opens with that tier's animals. `TIER_XP` in `limits.js` replaces mope.io's table (which
+  stops at 10M): 100 XP for tier 2, then about ×4.64 per tier up to 1T for tier 17 (460, 2.2K,
+  10K, 46K, 220K, 1M, 4.6M, 22M, 100M, 460M, 2.2B, 10B, 46B, 220B, 1T). Each tier takes about
+  30 foods. At tier 17 each food is worth 1/300 of the way to the 10T cap.
 - **Movement and rotation:** animals face the way they move (the client turns them smoothly).
   Speed scales with how far the pointer or joystick is pushed. Each animal's own
   `terrainSpeedComfort` from the client sets its speed on land, in water (oceans, lakes, puddles,
@@ -138,7 +140,7 @@ an allowed email before the site loads (free for up to 50 users).
   table (forms with their own range use it). Tiers 1–16 reach 75% of the range by the next
   tier's XP, where normal play upgrades. Staying on the tier, they keep growing on a log scale
   (each ×10 in XP adds the same amount) until the tier's cap. The caps halve down from tier
-  17: 10T, 5T, 2.5T, … 153M for tier 1. Tier 17 grows on a log scale from 10M to 10T. Losing XP
+  17: 10T, 5T, 2.5T, … 153M for tier 1. Tier 17 grows on a log scale from 1T to 10T. Losing XP
   shrinks the animal, upgrading starts the new animal at its tier's minimum, `/size <n>` pins
   a size, and `/size auto` hands it back to XP.
 - **Pumpkins:** 45 per world on land, arctic and desert. Touching one collects it for XP, and a

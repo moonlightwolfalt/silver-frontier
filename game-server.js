@@ -18,7 +18,7 @@ import { REGIONS } from "./regions.js";
 import { generateWorld } from "./world.js";
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
-import { MAX_XP } from "./limits.js";
+import { MAX_XP, TIER_XP } from "./limits.js";
 export { MAX_XP };
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +41,7 @@ const Reader = client.get("x");
 const config = loadClient(findClientChunk(CLIENT_DIR, "protocolVersion:"));
 export const PROTOCOL_VERSION = config.get("c").protocolVersion;
 export const ROLES = nr;
+for (const [i, xp] of TIER_XP.entries()) Lr[i].requiredXP = xp; // same table as the patched client
 export const game = { T, M, Lr, D, E };
 
 let accountsRef = null; // set by createGameServer, used for equipped skins
@@ -396,7 +397,7 @@ export class Lobby {
   //  - tiers 1-16: minimum at the tier's XP requirement, 75% of the range at the next tier's
   //    requirement (normal play upgrades about here), then on up to the maximum at the tier's
   //    growth cap on a log scale (every ×10 in XP adds the same amount of size)
-  //  - tier 17: minimum at 10M, maximum at 10 trillion, on a log scale
+  //  - tier 17: minimum at its requirement (1T), maximum at 10 trillion, on a log scale
   // Losing XP shrinks it again; /size pins it instead.
   targetSize(p) {
     const a = p.animal;
@@ -500,9 +501,10 @@ export class Lobby {
   }
 
   // Food is worth about 1/30 of the gap to the next tier, so every tier takes a similar effort.
+  // At tier 17 it's 1/300 of the way to the XP cap.
   foodXP(a) {
     const next = Lr[a.tier]?.requiredXP;
-    if (next === undefined) return 25_000;
+    if (next === undefined) return Math.round((MAX_XP - Lr[a.tier - 1].requiredXP) / 300);
     return Math.max(25, Math.round((next - Lr[a.tier - 1].requiredXP) / 30));
   }
 

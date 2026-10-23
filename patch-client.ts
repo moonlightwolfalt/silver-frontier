@@ -13,7 +13,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REGIONS } from "./regions.js";
 import { PUMPKINS, PUMPKIN_COLOURS } from "./pumpkins.js";
-import { MAX_XP } from "./limits.js";
+import { MAX_XP, TIER_XP } from "./limits.js";
 
 const dir = process.argv[2] ?? "mope-dump/site/mope.io";
 const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith(".js")).map((f) => join(dir, f));
@@ -177,6 +177,16 @@ for (const [from, to, marker = to] of edits) {
   const [file, src] = hits[0];
   sources.set(file, src.replace(from, () => to));
   changed.add(file);
+}
+// Tier XP requirements (Lr) from limits.js: tier 17 at 1T instead of 10M.
+for (const [file, src] of sources) {
+  const a = src.indexOf("\n  Lr = [\n");
+  if (a < 0) continue;
+  const b = src.indexOf("\n  ],\n", a);
+  let i = 0;
+  const table = src.slice(a, b).replace(/requiredXP: [\de.]+/g, () => `requiredXP: ${TIER_XP[i++]}`);
+  if (i !== TIER_XP.length) throw new Error(`expected ${TIER_XP.length} tiers in Lr, found ${i}`);
+  if (table !== src.slice(a, b)) sources.set(file, src.slice(0, a) + table + src.slice(b)), changed.add(file);
 }
 for (const file of changed) await writeFile(file, sources.get(file)!);
 console.log(changed.size ? `patched ${[...changed].join(", ")}` : "already patched");
