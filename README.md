@@ -119,6 +119,8 @@ an allowed email before the site loads (free for up to 50 users).
 - **World:** every biome gets its trees, hills, rocks, lakes, mud, puddles, holes and foods.
   The land biome has a volcano with lava pools and volcano foods, and the oceans have palm
   islands. Eaten food comes back after a few seconds.
+- **XP cap:** 10 trillion. mope.io sends XP as a 32-bit number, which stops at 4.29 billion,
+  so the client patch turns it into a 64-bit value.
 - **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier (the game's own
   table, 100 XP for tier 2 up to 10M for tier 17) the upgrade menu opens with that tier's
   animals. Each tier takes about 30 foods.

@@ -9,13 +9,14 @@
 // DEVELOPER 5. Each command lists the lowest role allowed to run it.
 
 import { PUMPKINS, pickPumpkin } from "./pumpkins.js";
+import { MAX_XP } from "./game-server.js";
 
 const COMMANDS = {
   help: { role: 0, usage: "/help", run: help },
   players: { role: 1, usage: "/players", run: players },
   animal: { role: 4, usage: "/animal <name> [subspecies]", run: animal },
   tier: { role: 4, usage: "/tier <1-17>  (opens that tier's upgrade menu)", run: tier },
-  xp: { role: 4, usage: "/xp <amount>  (upgrades follow, up to tier 17 at 10M)", run: xp },
+  xp: { role: 4, usage: "/xp <amount>  (up to 10 trillion; upgrades follow, tier 17 at 10M)", run: xp },
   size: { role: 4, usage: "/size <size> | /size auto  (auto: size follows XP)", run: size },
   speed: { role: 4, usage: "/speed <multiplier>", run: speed },
   zoom: { role: 4, usage: "/zoom <0.2-15>", run: zoom },
@@ -94,7 +95,7 @@ function tier(ctx, [n]) {
 }
 
 function xp(ctx, [n]) {
-  ctx.player.xp = Math.max(0, Number(n) || 0);
+  ctx.player.xp = Math.min(MAX_XP, Math.max(0, Number(n) || 0));
   ctx.lobby.sendXP(ctx.player);
   ctx.lobby.checkProgress(ctx.player);
 }

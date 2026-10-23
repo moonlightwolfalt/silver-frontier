@@ -116,6 +116,16 @@ const edits: [string, string, string?][] = [
     "var ng = [`#ffa500`, `#deb887`, `#ffd700`, `#6adb41`, `#e4384c`, `#38e4e1`],",
     `var ng = [${PUMPKIN_COLOURS.map((c) => "`" + c + "`").join(", ")}],`,
   ],
+  // XP above 4.29B: the live XP value and the death screen's XP become 64-bit floats, which hold
+  // whole numbers exactly up to 9 quadrillion (the client's bit writer can't do >32-bit integers).
+  [
+    "xp: { fields: { xp: { type: C.Integer, bits: 32 }, rank: { type: C.Integer, bits: 16 } } },",
+    "xp: { fields: { xp: { type: C.Float64 }, rank: { type: C.Integer, bits: 16 } } },",
+  ],
+  [
+    "stopGameSession: {\n      fields: {\n        xp: { type: C.Integer, bits: 32 },",
+    "stopGameSession: {\n      fields: {\n        xp: { type: C.Float64 },",
+  ],
   // Only our regions: the Mope directory is never asked.
   [
     "let { servers: t, regions: n, stats: r, playerCount: i } = await Nl(e);",

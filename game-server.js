@@ -23,6 +23,7 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(ROOT, "mope-dump/site/mope.io");
 const DEBUG = !!process.env.DEBUG;
 const TICK_MS = 50;
+export const MAX_XP = 10_000_000_000_000; // 10 trillion
 const PUMPKIN_COUNT = 45;
 const PUMPKIN_RESPAWN_MS = 30_000;
 
@@ -299,14 +300,15 @@ export class Lobby {
     this.broadcast(updateMessage([["destroyEntity", [encode("destroyEntity", { hasKiller: false, id })]]]));
     if (stats)
       p.ws.send(encode("stopGameSession", {
-        xp: p.xp, timeAlive: Math.round((Date.now() - (p.spawnedAt ?? Date.now())) / 1000), kills: 0, wins: 0,
+        xp: Math.min(MAX_XP, p.xp), timeAlive: Math.round((Date.now() - (p.spawnedAt ?? Date.now())) / 1000), kills: 0, wins: 0,
         coinsEarned: 0, cause: 0, killerName: "", killerAnimal: 0, killerSubspecies: 0, killerSkin: "",
         via: 0, viaId: 0, castByName: "", castByAnimal: 0,
       }));
   }
 
   sendXP(p) {
-    p.ws.send(updateMessage([["xp", [encode("xp", { xp: Math.min(p.xp, 2 ** 32 - 1), rank: 1 })]]]));
+    p.xp = Math.min(MAX_XP, Math.max(0, Math.round(p.xp)));
+    p.ws.send(updateMessage([["xp", [encode("xp", { xp: p.xp, rank: 1 })]]]));
   }
 
   // serverMessage has no prefix byte in the client's schema: it travels inside an update.
