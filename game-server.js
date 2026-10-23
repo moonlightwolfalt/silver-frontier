@@ -334,19 +334,30 @@ export class Lobby {
     return [form.minimumSize ?? cfg.minimumSize, form.maximumSize ?? cfg.maximumSize];
   }
 
-  // Size grows from the minimum at the tier's XP requirement to the maximum at the next tier's,
-  // and shrinks again when XP goes down. Tier 17 has no next tier, so it keeps growing all the
-  // way to MAX_XP (10 trillion) on a log scale: every ×10 in XP adds the same amount of size.
-  // /size pins it instead.
+  // XP at which a tier's animal reaches full size: 10 trillion for tier 17, halving for each
+  // tier below (tier 16 = 5T, tier 15 = 2.5T, ... tier 1 = about 153M).
+  growthCap(tier) {
+    return MAX_XP / 2 ** (Lr.length - tier);
+  }
+
+  // Size, between the animal's (or its form's) minimum and maximum:
+  //  - tiers 1-16: minimum at the tier's XP requirement, 75% of the range at the next tier's
+  //    requirement (normal play upgrades about here), then on up to the maximum at the tier's
+  //    growth cap on a log scale (every ×10 in XP adds the same amount of size)
+  //  - tier 17: minimum at 10M, maximum at 10 trillion, on a log scale
+  // Losing XP shrinks it again; /size pins it instead.
   targetSize(p) {
     const a = p.animal;
     if (p.fixedSize) return p.fixedSize;
     const [min, max] = this.sizeRange(a);
     const from = Lr[a.tier - 1].requiredXP;
     const next = Lr[a.tier]?.requiredXP;
-    const progress = next !== undefined
-      ? (p.xp - from) / (next - from)
-      : p.xp <= from ? 0 : Math.log(p.xp / from) / Math.log(MAX_XP / from);
+    const cap = this.growthCap(a.tier);
+    const logShare = (lo, hi) => (p.xp <= lo ? 0 : Math.log(p.xp / lo) / Math.log(hi / lo));
+    let progress;
+    if (next === undefined) progress = logShare(from, cap);
+    else if (p.xp < next) progress = 0.75 * ((p.xp - from) / (next - from));
+    else progress = 0.75 + 0.25 * logShare(next, cap);
     return min + (max - min) * Math.min(1, Math.max(0, progress));
   }
 
