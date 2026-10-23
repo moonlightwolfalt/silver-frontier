@@ -188,6 +188,9 @@ export class Lobby {
     const { entities, volcano } = generateWorld({ pg, E, D, cm, pm, sg, seed });
     this.volcano = volcano;
     for (const e of entities) this.addEntity(e, false);
+    this.terrainZones = entities
+      .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
+      .sort((a, b) => (a.type === "island" ? -1 : 0) - (b.type === "island" ? -1 : 0)); // islands win over sea
     this.rand = (() => { let x = seed; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32); })();
     for (let i = 0; i < PUMPKIN_COUNT; i++) this.spawnPumpkin(false);
     this.ticks = 0;
@@ -349,6 +352,64 @@ export class Lobby {
     return tier;
   }
 
+  // The animal's config with its form's overrides applied (the client's Vr()).
+  configOf(a) {
+    const base = M[a.slug];
+    const form = base.subspeciesOverrides?.get?.(a.subspecies);
+    return form ? { ...base, ...form } : base;
+  }
+
+  // Terrain under a point, in the client's terms (terrainSpeedComfort: land, water, mud).
+  terrainAt(x, y) {
+    for (const e of this.terrainZones) {
+      if (e.type === "river") {
+        if (Math.abs(x - e.x) <= e.size / 2 && Math.abs(y - e.y) <= e.height / 2) return "water";
+      } else if (Math.hypot(x - e.x, y - e.y) <= e.size / 2) {
+        if (e.type === "island") return "land";
+        return e.type === "mud" ? "mud" : "water";
+      }
+    }
+    return biomeAt(x, y) === "ocean" ? "water" : "land";
+  }
+
+  // Movement, from the client's own animal data:
+  //  - speed scales with how far the pointer is (the touch joystick sends a point up to 300 away)
+  //  - terrainSpeedComfort[land|water|mud] multiplies it (out-of-comfort terrain is slower)
+  //  - on arctic ground, animals with iceGrip < 1 slide: velocity follows the input only by iceGrip
+  //  - boost (Space / click) dashes, then waits boostCooldown
+  // mope.io's absolute base speed is server-side; ours slows a little with tier.
+  move(p, dt) {
+    const a = p.animal;
+    const cfg = this.configOf(a);
+    const terrain = this.terrainAt(a.x, a.y);
+    const now = Date.now();
+    const dx = p.target.x - a.x, dy = p.target.y - a.y, dist = Math.hypot(dx, dy);
+    const base = (360 - a.tier * 8) * a.speed * (cfg.terrainSpeedComfort?.[terrain] ?? 1);
+    let want = dist > 5 && !p.movementLocked ? base * Math.min(1, dist / 250) : 0;
+    if (a.boostUntil > now) want = base * 2.2;
+    const dirX = dist > 0 ? dx / dist : Math.cos(a.angle), dirY = dist > 0 ? dy / dist : Math.sin(a.angle);
+    const onIce = a.biomeHere === E.arctic && terrain === "land" && (cfg.iceGrip ?? 0.15) < 1;
+    const grip = onIce ? Math.max(0.04, cfg.iceGrip ?? 0.15) : 0.35;
+    a.vx = (a.vx ?? 0) + (dirX * want - (a.vx ?? 0)) * grip;
+    a.vy = (a.vy ?? 0) + (dirY * want - (a.vy ?? 0)) * grip;
+    const moved = Math.hypot(a.vx, a.vy) * dt;
+    if (moved < 0.05) return;
+    a.x = Math.min(MAP.x, Math.max(0, a.x + a.vx * dt));
+    a.y = Math.min(MAP.y, Math.max(0, a.y + a.vy * dt));
+    // the client's angle is the facing direction on screen (0 = right, clockwise, y down)
+    if (Math.hypot(a.vx, a.vy) > 15) a.angle = (Math.atan2(a.vy, a.vx) + 2 * Math.PI) % (2 * Math.PI);
+    a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[biomeAt(a.x, a.y)];
+    this.eat(p);
+  }
+
+  boost(p) {
+    const a = p.animal;
+    const now = Date.now();
+    if (!a || now < (a.boostReadyAt ?? 0)) return;
+    a.boostUntil = now + 300;
+    a.boostReadyAt = now + (this.configOf(a).boostCooldown ?? 1500);
+  }
+
   // Natural progression: once XP reaches the next tier, offer that tier's animals, all the way
   // to tier 17. One tier per menu, like mope.io; the next menu follows the pick if XP allows.
   checkProgress(p) {
@@ -385,7 +446,7 @@ export class Lobby {
   // slows down and stops, then can be collected like any other. Animals it hits are knocked back.
   shootPumpkin(p, variant, spread = 0) {
     const a = p.animal;
-    const dir = a.angle - Math.PI / 2 + spread; // animal angles are measured from "up"
+    const dir = a.angle + spread; // the client's angle is the facing direction
     const start = a.size / 2 + 40;
     const e = this.spawnPumpkin(true, variant, { x: a.x + Math.cos(dir) * start, y: a.y + Math.sin(dir) * start });
     Object.assign(e, { vx: Math.cos(dir) * 1400, vy: Math.sin(dir) * 1400, shooter: p, angle: dir, shot: true });
@@ -445,15 +506,7 @@ export class Lobby {
     for (const p of this.players) {
       const a = p.animal;
       if (!a) continue;
-      const dx = p.target.x - a.x, dy = p.target.y - a.y, dist = Math.hypot(dx, dy);
-      if (dist > 5 && !p.movementLocked) {
-        const step = Math.min(dist, 300 * a.speed * dt);
-        a.x = Math.min(MAP.x, Math.max(0, a.x + (dx / dist) * step));
-        a.y = Math.min(MAP.y, Math.max(0, a.y + (dy / dist) * step));
-        a.angle = (Math.atan2(dy, dx) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI);
-        a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[biomeAt(a.x, a.y)];
-        this.eat(p);
-      }
+      this.move(p, dt);
       // ease toward the size XP calls for, so growing and shrinking animate
       const target = this.targetSize(p);
       a.size += Math.abs(target - a.size) < 0.05 ? target - a.size : (target - a.size) * 0.15;
@@ -554,6 +607,8 @@ export function createGameServer({ accounts, parties }) {
       case "pointerPosition":
         p.target = { x: (msg.x / 65535) * MAP.x, y: (msg.y / 65535) * MAP.y };
         return;
+      case "startBoost":
+        return lobby.boost(p);
       case "movementLocked":
         p.movementLocked = !!msg.value;
         return;

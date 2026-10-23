@@ -122,6 +122,13 @@ an allowed email before the site loads (free for up to 50 users).
 - **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier (the game's own
   table, 100 XP for tier 2 up to 10M for tier 17) the upgrade menu opens with that tier's
   animals. Each tier takes about 30 foods.
+- **Movement and rotation:** animals face the way they move (the client turns them smoothly).
+  Speed scales with how far the pointer or joystick is pushed. Each animal's own
+  `terrainSpeedComfort` from the client sets its speed on land, in water (oceans, lakes, puddles,
+  the river) and in mud: a shrimp is fast in water and slow on land, a mouse is half speed in
+  water. On arctic ground animals slide according to their `iceGrip`. Space or click boosts,
+  with each animal's `boostCooldown`. mope.io's base speed isn't in the client, so the server
+  uses its own value: 352 at tier 1, slowing to 224 at tier 17.
 - **Size:** every animal grows from its tier's minimum to maximum size as its XP goes from
   that tier's requirement to the next tier's, using the client's own size table, including
   forms with their own range. Tier 17 grows from 10M to 20M. Losing XP shrinks it again, and
