@@ -1,7 +1,11 @@
 // Usage: node server.js   (PORT=3000 by default; behind a proxy set NODE_USE_ENV_PROXY=1)
-// Generates every asset category from mope.io / s3.mope.io (see asset-catalog.js), starts the
-// local sandbox game server for the LOCALTEST region (game-server.js, GAME_PORT=8443), and serves:
-//   /                       the fetched mope.io client (mope-dump/site/mope.io)
+// The private mope.io server. Generates every asset category from mope.io / s3.mope.io (see
+// asset-catalog.js) and serves, all on one port:
+//   /                       the fetched, patched mope.io client (mope-dump/site/mope.io)
+//   /play/<region>[/new]    game WebSockets, one lobby per region in regions.js (game-server.js);
+//                           /new opens a private party (parties.js)
+//   /api/...                accounts, email/password login, shop, inventory (accounts.js)
+//   /api/servers            players per region, for the client's server list
 //   /assets/<path>          game textures: generated copy first, else mope.io (cached)
 //   /s3/<path>              s3.mope.io files (skins, translations): generated copy first, else
 //                           s3.mope.io (cached); the patched client points s3PublicUrl here
@@ -15,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CATEGORIES, generate as generateAssets } from "./asset-catalog.js";
+import { createAccounts } from "./accounts.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -90,9 +95,27 @@ fetch('/api/assets-all').then(r=>r.json()).then(d=>{
     l.map(e=>/\\.(png|jpe?g|webp|svg|gif)$/i.test(e.file)?'<img loading=lazy title="'+e.file+'" src="/dl/'+encodeURI(e.file)+'">':'<a href="/dl/'+encodeURI(e.file)+'">'+e.file+'</a> ').join('')).join('');
 });</script>`;
 
-http.createServer(async (req, res) => {
+// Item ids for the shop come from the client's own item names file on S3 (cached locally).
+async function loadItemIds() {
+  const cache = path.join(DUMP, "s3.mope.io/mope-prod/translations/items/en.json");
+  try { return Object.keys(JSON.parse(fs.readFileSync(cache, "utf8"))); } catch {}
+  try {
+    const r = await fetch("https://s3.mope.io/mope-prod/translations/items/en.json");
+    const text = await r.text();
+    fs.mkdirSync(path.dirname(cache), { recursive: true });
+    fs.writeFileSync(cache, text);
+    return Object.keys(JSON.parse(text));
+  } catch {
+    return [];
+  }
+}
+
+let game = null; // set once the client is fetched: { accounts, server }
+
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   const p = decodeURIComponent(url.pathname);
+  const origin = `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers.host}`;
 
   if (p === "/gallery") { res.writeHead(200, { "Content-Type": TYPES[".html"] }); return res.end(PAGE); }
   if (p === "/api/assets-all") return json(res, 200, readIndex());
@@ -104,6 +127,17 @@ http.createServer(async (req, res) => {
   if (p === "/api/refresh" && req.method === "POST") {
     try { await generate(); return json(res, 200, { ok: true }); }
     catch (e) { return json(res, 500, { error: String(e.message) }); }
+  }
+  if (p === "/api/servers") return json(res, 200, game?.server.stats() ?? {});
+  if (p.startsWith("/api/") && game) return game.accounts.handleApi(req, res, req.url.slice("/api".length), origin);
+  // The client tells the game server about sign-in changes: POST <server url>/auth/login|logout.
+  if (game && /^\/play\/[^/]+(\/[^/]+)?\/auth\/(login|logout)$/.test(p) && req.method === "POST") {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    let sessionID = "";
+    try { sessionID = JSON.parse(body).sessionID ?? ""; } catch {}
+    game.server.relink(sessionID, p.endsWith("login") ? game.accounts.fromRequest(req) : null);
+    return json(res, 200, { ok: true });
   }
   if (p.startsWith("/dl/")) {
     const file = path.normalize(path.join(ASSETS, p.slice("/dl/".length)));
@@ -125,10 +159,23 @@ http.createServer(async (req, res) => {
       err ? (res.writeHead(404), res.end("mope.io client not fetched yet; run: bun run fetch-mope.ts")) : send(res, "index.html", data));
   }
   return serveCached(res, SITE, p.slice(1), new URL(p + url.search, "https://mope.io"));
-}).listen(PORT, async () => {
+});
+
+server.on("upgrade", (req, socket, head) => {
+  if (game && req.url.startsWith("/play/")) game.server.accept(req, socket, head);
+  else socket.destroy();
+});
+
+server.listen(PORT, async () => {
   console.log(`http://localhost:${PORT}`);
   if (!fs.existsSync(path.join(SITE, "index.html"))) return console.log("client not fetched yet; run: bun run setup");
-  await import("./game-server.js");
+  const [{ createGameServer, game: data }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
+  const accounts = createAccounts({
+    dataDir: path.join(ROOT, "data"),
+    itemIds: await loadItemIds(),
+    animalSlugs: Object.keys(data.M),
+  });
+  game = { accounts, server: createGameServer({ accounts, parties: createParties() }) };
   if (!fs.existsSync(path.join(ASSETS, "index.json"))) {
     console.log("no assets yet, generating ...");
     try { await generate(); } catch (e) { console.error(e.message); }

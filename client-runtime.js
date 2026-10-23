@@ -39,6 +39,8 @@ export function loadClient(src) {
     console, performance, TextEncoder, TextDecoder, Math, Date,
     ArrayBuffer, SharedArrayBuffer, DataView, Uint8Array, Int8Array, Uint16Array, Int16Array,
     Uint32Array, Int32Array, Float32Array, Float64Array,
+    // the patched client builds some URLs from location.origin at load time
+    location: { origin: "", href: "", hostname: "localhost" },
   });
   const resolve = (name) => {
     if (values.has(name)) return values.get(name);
