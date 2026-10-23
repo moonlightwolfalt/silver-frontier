@@ -119,8 +119,9 @@ an allowed email before the site loads (free for up to 50 users).
 - **World:** every biome gets its trees, hills, rocks, lakes, mud, puddles, holes and foods.
   The land biome has a volcano with lava pools and volcano foods, and the oceans have palm
   islands. Eaten food comes back after a few seconds.
-- **XP cap:** 10 trillion. mope.io sends XP as a 32-bit number, which stops at 4.29 billion,
-  so the client patch turns it into a 64-bit value.
+- **XP cap:** 10 trillion (`limits.js`). mope.io sends XP as a 32-bit number, which stops at
+  4.29 billion, so the client patch turns it into a 64-bit value. At tier 17 the XP bar shows
+  progress toward the cap ("1.5B XP / 10T XP"), filled on the same log scale as the growth.
 - **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier (the game's own
   table, 100 XP for tier 2 up to 10M for tier 17) the upgrade menu opens with that tier's
   animals. Each tier takes about 30 foods.
@@ -203,6 +204,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
 | `dev-commands.js` | Chat commands and the client's staff tools |
 | `regions.js` | The region list |
+| `limits.js` | The XP cap, shared by the server and the client patch |
 | `site-gate.js` | Site-wide password for hosted copies (`SITE_PASSWORD`) |
 | `Dockerfile`, `railway.json` | Railway / Docker deployment |
 | `render.yaml` | Render (free plan) |

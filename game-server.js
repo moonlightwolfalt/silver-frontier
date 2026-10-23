@@ -18,12 +18,13 @@ import { REGIONS } from "./regions.js";
 import { generateWorld } from "./world.js";
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
+import { MAX_XP } from "./limits.js";
+export { MAX_XP };
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(ROOT, "mope-dump/site/mope.io");
 const DEBUG = !!process.env.DEBUG;
 const TICK_MS = 50;
-export const MAX_XP = 10_000_000_000_000; // 10 trillion
 const PUMPKIN_COUNT = 45;
 const PUMPKIN_RESPAWN_MS = 30_000;
 

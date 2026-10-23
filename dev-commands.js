@@ -9,7 +9,7 @@
 // DEVELOPER 5. Each command lists the lowest role allowed to run it.
 
 import { PUMPKINS, pickPumpkin } from "./pumpkins.js";
-import { MAX_XP } from "./game-server.js";
+import { MAX_XP } from "./limits.js";
 
 const COMMANDS = {
   help: { role: 0, usage: "/help", run: help },

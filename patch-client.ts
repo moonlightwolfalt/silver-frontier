@@ -13,6 +13,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REGIONS } from "./regions.js";
 import { PUMPKINS, PUMPKIN_COLOURS } from "./pumpkins.js";
+import { MAX_XP } from "./limits.js";
 
 const dir = process.argv[2] ?? "mope-dump/site/mope.io";
 const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith(".js")).map((f) => join(dir, f));
@@ -125,6 +126,20 @@ const edits: [string, string, string?][] = [
   [
     "stopGameSession: {\n      fields: {\n        xp: { type: C.Integer, bits: 32 },",
     "stopGameSession: {\n      fields: {\n        xp: { type: C.Float64 },",
+  ],
+  // XP bar at tier 17: progress toward the XP cap ("1.5B / 10T XP") instead of a bare total,
+  // filled on a log scale like tier 17's growth (each ×10 in XP fills the same amount).
+  [
+    "Aa(Lr[e.tier - 1].requiredXP, Lr[e.tier]?.requiredXP ?? 4e7, Lr[e.tier] !== void 0),",
+    `Aa(Lr[e.tier - 1].requiredXP, Lr[e.tier]?.requiredXP ?? ${MAX_XP}, Lr[e.tier] !== void 0),`,
+  ],
+  [
+    "n = t > 0 ? Be(((e - wa) / t) * 100, 0, 100) : 100;",
+    "n = t > 0 ? Be((Ea ? (e > wa ? Math.log(e / wa) / Math.log(Ta / wa) : 0) : (e - wa) / t) * 100, 0, 100) : 100;",
+  ],
+  [
+    "(ba.xp.label = F(Ea ? `hud:stats.bar.xpBarTop` : `hud:stats.bar.xpBar`, {",
+    "(ba.xp.label = Ea\n      ? `${i} ${F(`hud:stats.xp`)} / ${a} ${F(`hud:stats.xp`)}`\n      : F(`hud:stats.bar.xpBar`, {",
   ],
   // Only our regions: the Mope directory is never asked.
   [
