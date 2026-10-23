@@ -6,6 +6,9 @@
 //                           /new opens a private party (parties.js)
 //   /api/...                accounts, email/password login, shop, inventory (accounts.js)
 //   /api/servers            players per region, for the client's server list
+//   /__health               health check for hosts (no password needed)
+// Hosting: SITE_PASSWORD locks the whole site behind a password (site-gate.js); DATA_DIR and
+// ASSETS_DIR move the account database and downloaded assets onto a persistent volume.
 //   /assets/<path>          game textures: generated copy first, else mope.io (cached)
 //   /s3/<path>              s3.mope.io files (skins, translations): generated copy first, else
 //                           s3.mope.io (cached); the patched client points s3PublicUrl here
@@ -20,10 +23,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CATEGORIES, generate as generateAssets } from "./asset-catalog.js";
 import { createAccounts } from "./accounts.js";
+import { createGate } from "./site-gate.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const ASSETS = path.join(ROOT, "assets");
+const ASSETS = path.resolve(process.env.ASSETS_DIR ?? path.join(ROOT, "assets"));
+const DATA = path.resolve(process.env.DATA_DIR ?? path.join(ROOT, "data"));
+const gate = createGate(process.env.SITE_PASSWORD);
+// On Railway, never start without the password: the site serves mope.io's client and art.
+if (process.env.RAILWAY_PROJECT_ID && !gate) {
+  console.error("SITE_PASSWORD is not set. Add it in Railway's service variables, then redeploy.");
+  process.exit(1);
+}
 const CUSTOM = path.join(ROOT, "custom-assets");
 const DUMP = path.join(ROOT, "mope-dump/site");
 const SITE = path.join(DUMP, "mope.io");
@@ -118,6 +129,9 @@ const server = http.createServer(async (req, res) => {
   const p = decodeURIComponent(url.pathname);
   const origin = `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers.host}`;
 
+  if (p === "/__health") { res.writeHead(200, { "Content-Type": "text/plain" }); return res.end("ok"); }
+  if (gate && (await gate.handle(req, res, p))) return;
+
   if (p === "/gallery") { res.writeHead(200, { "Content-Type": TYPES[".html"] }); return res.end(PAGE); }
   if (p === "/api/assets-all") return json(res, 200, readIndex());
   if (p === "/api/categories") {
@@ -166,16 +180,16 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
-  if (game && req.url.startsWith("/play/")) game.server.accept(req, socket, head);
+  if (game && req.url.startsWith("/play/") && (!gate || gate.allowed(req))) game.server.accept(req, socket, head);
   else socket.destroy();
 });
 
 server.listen(PORT, async () => {
-  console.log(`http://localhost:${PORT}`);
+  console.log(`http://localhost:${PORT}${gate ? " (password protected)" : ""}`);
   if (!fs.existsSync(path.join(SITE, "index.html"))) return console.log("client not fetched yet; run: bun run setup");
   const [{ createGameServer, game: data }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
   const accounts = createAccounts({
-    dataDir: path.join(ROOT, "data"),
+    dataDir: DATA,
     itemIds: await loadItemIds(),
     animalSlugs: Object.keys(data.M),
   });

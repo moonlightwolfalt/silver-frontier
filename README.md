@@ -9,6 +9,30 @@ bun run setup    # fetch the mope.io client, prettify it, patch it for this serv
 bun run start    # http://localhost:3000 — everything runs on this one port
 ```
 
+## Hosting on Railway
+
+The repo includes a `Dockerfile` and `railway.json`. The build fetches and patches the mope.io
+client, and the server starts on Railway's port.
+
+1. On [railway.com](https://railway.com): **New Project → Deploy from GitHub repo**, and pick
+   this repository.
+2. In the service, add a **Volume** with mount path `/data`. Accounts and downloaded assets go
+   there, so they survive redeploys.
+3. Under **Variables**, add:
+   - `SITE_PASSWORD`: the password visitors must enter. The server won't start on Railway
+     without it.
+   - `OWNER_EMAILS`: your email (comma-separate several). These accounts get the developer
+     role, unlimited coins and gems, and every item.
+4. Under **Settings → Networking**, choose **Generate Domain**.
+5. Open the domain and enter the password. Then **Log in** and register with your owner email.
+
+Keep the service at **one replica**: each region's world lives in that server's memory. On
+first start it downloads the asset catalog into `/data/assets` (about 10 minutes). The game is
+playable meanwhile, because missing files are fetched from mope.io as needed.
+
+Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATA_DIR` (accounts, default
+`./data`), `ASSETS_DIR` (default `./assets`). `/__health` answers without the password.
+
 ## Playing
 
 - **Regions:** USA East, USA Central, USA West, Europe, Asia, Oceania and Brazil. Each is its own
@@ -90,6 +114,8 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
 | `dev-commands.js` | Chat commands and the client's staff tools |
 | `regions.js` | The region list |
+| `site-gate.js` | Site-wide password for hosted copies (`SITE_PASSWORD`) |
+| `Dockerfile`, `railway.json` | Railway / Docker deployment |
 | `client-runtime.js` | Loads the client's own protocol code so the server encodes exactly like it |
 | `asset-catalog.js` | Lists every asset from the client's tables and downloads it into `assets/<Category>/` |
 
