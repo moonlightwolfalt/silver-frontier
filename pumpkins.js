@@ -3,14 +3,14 @@
 // custom-assets/terrain/pumpkin/<id>/, made by tools/make-pumpkins.py).
 //
 // weight: spawn chance out of the total (1000 here, so 35 = 3.5%)
-// xp17:   XP for collecting it at tier 17; lower tiers get the same share of it as their tier's
-//         XP requirement is of tier 17's (see pumpkinXP), never less than xp17 / 1000.
+// xp17:   XP for collecting it at tier 17; each tier below gets half of the tier above it
+//         (tier 16 = xp17 / 2, tier 15 = xp17 / 4, ... tier 1 = xp17 / 65536)
 export const PUMPKINS = [
   { id: "normal", name: "Pumpkin", weight: 480, xp17: 20_000 },
   { id: "jack", name: "Jack-o'-lantern", weight: 250, xp17: 50_000 },
   { id: "gold", name: "Gold", weight: 120, xp17: 150_000 },
   { id: "emerald", name: "Emerald", weight: 60, xp17: 300_000 },
-  { id: "ruby", name: "Ruby", weight: 14, xp17: 445_000 },
+  { id: "ruby", name: "Ruby", weight: 14, xp17: 440_000 },
   { id: "diamond", name: "Diamond", weight: 5, xp17: 1_200_000 },
   { id: "onyx", name: "Onyx", weight: 2, xp17: 2_500_000 },
   { id: "amber", name: "Amber", weight: 35, xp17: 400_000 }, // rarer than emerald
@@ -31,8 +31,6 @@ export function pickPumpkin(random = Math.random) {
   return 0;
 }
 
-export function pumpkinXP(variant, tier, Lr) {
-  const { xp17 } = PUMPKINS[variant];
-  const share = Lr[tier - 1].requiredXP / Lr[Lr.length - 1].requiredXP;
-  return Math.round(Math.max(xp17 * share, xp17 / 1000));
+export function pumpkinXP(variant, tier, topTier = 17) {
+  return Math.max(1, Math.round(PUMPKINS[variant].xp17 / 2 ** (topTier - tier)));
 }

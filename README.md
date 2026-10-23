@@ -23,8 +23,8 @@ bun run start    # http://localhost:3000 — everything runs on this one port
   animals. Each tier takes about 30 foods.
 - **Pumpkins:** 45 per world on land, arctic and desert. Touching one collects it for XP, and a
   new one appears 30 s later. Rare ones (gold and up) show on the minimap. `pumpkins.js` sets
-  every variant's spawn chance and XP at tier 17 (lower tiers get a share scaled by the tier's
-  XP requirement):
+  every variant's spawn chance and XP at tier 17. Each lower tier gets half of the tier above
+  (tier 16 = ½, tier 15 = ¼, … tier 1 = 1/65,536):
 
   | Variant | Chance | XP at tier 17 |
   | --- | --- | --- |
@@ -34,7 +34,7 @@ bun run start    # http://localhost:3000 — everything runs on this one port
   | Emerald | 6% | 300K |
   | **Amber** | 3.5% | 400K |
   | **Sapphire** | 2.2% | 550K |
-  | Ruby | 1.4% | 445K |
+  | Ruby | 1.4% | 440K |
   | **Amethyst** | 0.9% | 800K |
   | Diamond | 0.5% | 1.2M |
   | **Black Hole** | 0.3% | 2M |
@@ -68,7 +68,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `/players`, `/kick <player>` | moderator |
 | `/ban <player> [minutes]`, `/unban <email>` | trusted moderator |
 | `/announce <message>` | event team |
-| `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
+| `/shoot [variant] [count]` fires pumpkins the way you face (they roll, stop and can be collected; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
 | `/coins <n> [email]`, `/gems <n> [email]`, `/role <email> <0-5>` | developer |
 
 ## Files
@@ -88,7 +88,9 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `client-runtime.js` | Loads the client's own protocol code so the server encodes exactly like it |
 | `asset-catalog.js` | Lists every asset from the client's tables and downloads it into `assets/<Category>/` |
 
-Asset categories: Animals, UI, Shop Skins, Foods, Game Object Assets, Biomes, Biome Terrains.
+Asset categories: Animals, UI, Shop Skins, Foods, Game Object Assets, Biomes, Biome Terrains,
+Abilities. Abilities holds every ability texture and animation frame: the base ones from
+mope.io and every ability skin on S3, for example all 24 fireball skins with their 10 frames.
 Open `/gallery` to browse them. `POST /api/refresh` re-runs the download.
 
 Behind an HTTP proxy, start Node with `NODE_USE_ENV_PROXY=1` so its `fetch` uses it.

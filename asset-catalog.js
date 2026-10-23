@@ -9,8 +9,9 @@
 // when the response is an image or JSON.
 import fs from "node:fs";
 import path from "node:path";
+import * as acorn from "acorn";
 
-export const CATEGORIES = ["Animals", "UI", "Shop Skins", "Foods", "Game Object Assets", "Biomes", "Biome Terrains"];
+export const CATEGORIES = ["Animals", "UI", "Shop Skins", "Foods", "Game Object Assets", "Biomes", "Biome Terrains", "Abilities"];
 const SITE = "https://mope.io";
 const S3 = "https://s3.mope.io/mope-prod";
 const BIOMES = ["land", "ocean", "arctic", "desert", "volcano", "river", "lake", "beach", "swamp", "jungle"];
@@ -115,6 +116,56 @@ function parsePathLiterals(src) {
   return [...out].filter((p) => !p.endsWith("/") && /^[\w/.-]+$/.test(p));
 }
 
+// ---------- abilities ----------
+
+const FIREBALL_FRAMES = ["dynamic", "static"].flatMap((k) => [0, 1, 2, 3, 4].map((n) => `${k}/${n}`));
+
+// Every ability texture and animation frame, base (mope.io/assets/abilities/...) and skins
+// (s3 items/abilities/...). Ability classes come from the client's ability class map; each
+// class's own texture name and skin enum come from its constructor.
+function abilityCandidates(src, enums) {
+  const out = [];
+  const site = (p) => out.push({ url: `${SITE}/assets/${withExt(p)}`, rel: withExt(p) });
+  const s3 = (p) => out.push({ url: `${S3}/items/${withExt(p)}`, rel: `items/${withExt(p)}` });
+  const skinsOf = (enumName) => (enums[enumName] ?? []).filter((n) => n && n !== "DEFAULT").map((n) => n.toLowerCase());
+
+  // exact source of each top-level class, so one class's fields never leak into another's
+  const classes = new Map();
+  for (const node of acorn.parse(src, { ecmaVersion: "latest", sourceType: "module" }).body)
+    if (node.type === "VariableDeclaration")
+      for (const d of node.declarations) if (d.init?.type === "ClassExpression") classes.set(d.id.name, src.slice(d.init.start, d.init.end));
+
+  const at = src.indexOf("fart: () =>");
+  const block = at < 0 ? "" : src.slice(src.lastIndexOf("({", at), src.indexOf("})", at));
+  for (const [, name, cls] of block.matchAll(/([a-z_]+): \(\) => ([\w$]+)/g)) {
+    const body = classes.get(cls);
+    if (!body) continue;
+    const texture = body.match(/this\.defaultTextureName = `([\w-]+)`/)?.[1];
+    const skins = skinsOf(body.match(/this\.subspeciesEnum = ([\w$]+)/)?.[1]);
+    if (name === "fireball") {
+      for (const f of FIREBALL_FRAMES) site(`abilities/fireball/${texture ?? "0"}/${f}`);
+      for (const skin of skins) for (const f of FIREBALL_FRAMES) s3(`abilities/fireball/${skin}/${f}`);
+      continue;
+    }
+    if (texture) site(`abilities/${name}/${texture}`);
+    for (const skin of skins) {
+      if (name === "spider_web") s3(`abilities/spider_web/${skin}/spider_web`);
+      else if (name === "spit") s3(`abilities/camel/${skin}`), [0, 1, 2].forEach((n) => s3(`abilities/camel/${skin}/spit${n}`));
+      else s3(`abilities/${name}/${skin}`);
+    }
+  }
+
+  // Animal abilities with skins: `let n = Enum[...]` followed by `.../items/abilities/<name>/${n}...`
+  for (const m of src.matchAll(/let n = ([\w$]+)\[[^\n]*\n[^\n]*items\/abilities\/([\w]+)\/\$\{n\}([\w/]*)`/g))
+    for (const skin of skinsOf(m[1])) s3(`abilities/${m[2]}/${skin}${m[3]}`);
+  // Stomp variants for the giraffe family
+  for (const v of ["", "white/", "momaffie/", "girabie/"]) site(`abilities/stomp/${v}stomp`);
+  // Ostrich egg skins: items/abilities/ostrich_egg/ostrich_<form>/{edible,ostrich_egg}
+  const egg = src.match(/items\/abilities\/ostrich_egg\/ostrich_\$\{([\w$]+)\[/);
+  if (egg) for (const form of skinsOf(egg[1])) for (const f of ["edible", "ostrich_egg"]) s3(`abilities/ostrich_egg/ostrich_${form}/${f}`);
+  return out;
+}
+
 // ---------- candidate list ----------
 
 const stem = (s) => s.toLowerCase().replace(/[^a-z]/g, "");
@@ -176,6 +227,7 @@ export function buildCandidates(clientDir, itemIds = []) {
       : top === "biomes" || p.startsWith("UI/tutorial/") ? "Biomes"
       : top === "UI" ? "UI"
       : top === "terrain" && BIOMES.includes(second) ? "Biome Terrains"
+      : top === "abilities" ? "Abilities"
       : "Game Object Assets";
     site(category, p);
   }
@@ -196,7 +248,9 @@ export function buildCandidates(clientDir, itemIds = []) {
   }
   // Ability skin literals that are prefixed with the S3 items URL in the client
   for (const m of src.matchAll(/\+ `(abilities\/[\w/-]+)`/g))
-    add("Shop Skins", `${S3}/items/${withExt(m[1])}`, `items/${withExt(m[1])}`);
+    add("Abilities", `${S3}/items/${withExt(m[1])}`, `items/${withExt(m[1])}`);
+
+  for (const { url, rel } of abilityCandidates(src, enums)) add("Abilities", url, rel);
 
   return { candidates: [...list].map(([url, v]) => ({ url, ...v })), animals, enums };
 }

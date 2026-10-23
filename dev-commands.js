@@ -8,7 +8,7 @@
 // Roles (the client's own enum): USER 0, MODERATOR 1, TRUSTED_MODERATOR 2, EVENT_TEAM 3, ADMIN 4,
 // DEVELOPER 5. Each command lists the lowest role allowed to run it.
 
-import { PUMPKINS } from "./pumpkins.js";
+import { PUMPKINS, pickPumpkin } from "./pumpkins.js";
 
 const COMMANDS = {
   help: { role: 0, usage: "/help", run: help },
@@ -23,6 +23,7 @@ const COMMANDS = {
   tp: { role: 4, usage: "/tp <x> <y> | /tp <player>", run: tp },
   bring: { role: 4, usage: "/bring <player>", run: bring },
   spawn: { role: 4, usage: "/spawn <food> [count]", run: spawnFood },
+  shoot: { role: 4, usage: "/shoot [variant] [count]  (fires pumpkins the way you face; default random variant)", run: shoot },
   pumpkin: { role: 4, usage: "/pumpkin <variant> [count]  (normal jack gold emerald amber sapphire ruby amethyst diamond black_hole onyx)", run: pumpkin },
   clearfood: { role: 4, usage: "/clearfood", run: clearFood },
   kill: { role: 4, usage: "/kill [player]", run: kill },
@@ -162,6 +163,20 @@ function pumpkin(ctx, [name, count]) {
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
     ctx.lobby.spawnPumpkin(true, variant, { x: me.x + Math.cos(a) * 140, y: me.y + Math.sin(a) * 140 });
+  }
+}
+
+function shoot(ctx, [name, count]) {
+  needAnimal(ctx);
+  let variant = null;
+  if (name && isNaN(Number(name))) {
+    variant = PUMPKINS.findIndex((p) => p.id === name.toLowerCase());
+    if (variant < 0) throw new Error(`no pumpkin "${name}"`);
+  } else if (name) count = name;
+  const n = Math.min(12, Math.max(1, Number(count) || 1));
+  for (let i = 0; i < n; i++) {
+    const spread = n === 1 ? 0 : (i / (n - 1) - 0.5) * 0.8; // fan out up to ±23°
+    ctx.lobby.shootPumpkin(ctx.player, variant ?? pickPumpkin(), spread);
   }
 }
 

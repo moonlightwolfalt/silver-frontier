@@ -130,6 +130,20 @@ function writeAnimalSync(w, a) {
   w.writeUint32(0); // padding for species-specific fields
 }
 
+// position record for a moving pumpkin: 14-bit id, B.synchronize, then the pumpkin's angle and
+// size flags (Eg.synchronize).
+function writePumpkinSync(w, e) {
+  w.writeBits(e.id, 14);
+  w.writeBoolean(true); // x present
+  w.writeBoolean(true); // y present
+  w.writeUint16(precision(e.x, MAP.x, 16));
+  w.writeUint16(precision(e.y, MAP.y, 16));
+  w.writeBoolean(false); // tumbling
+  w.writeBoolean(true); // angle present
+  w.writeBoolean(false); // size present
+  w.writeUint8(precision(e.angle, 2 * Math.PI, 8));
+}
+
 // update message: groups of [u16 65535 - kind][u16 count] + length-prefixed records
 function updateMessage(groups) {
   const w = newWriter();
@@ -169,6 +183,7 @@ export class Lobby {
     this.players = new Set();
     this.nextId = 1;
     this.entities = new Map(); // world objects and foods, by id
+    this.moving = new Set(); // shot pumpkins still rolling
     const seed = [...(party ?? region.id)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
     const { entities, volcano } = generateWorld({ pg, E, D, cm, pm, sg, seed });
     this.volcano = volcano;
@@ -331,7 +346,7 @@ export class Lobby {
   eat(p) {
     const a = p.animal;
     for (const e of this.entities.values()) {
-      if (e.type === "pumpkin" && Math.hypot(e.x - a.x, e.y - a.y) <= a.size / 2 + e.size / 2) {
+      if (e.type === "pumpkin" && !this.moving.has(e) && Math.hypot(e.x - a.x, e.y - a.y) <= a.size / 2 + e.size / 2) {
         this.collectPumpkin(p, e);
         continue;
       }
@@ -346,20 +361,66 @@ export class Lobby {
     }
   }
 
+  // Fires a pumpkin from the front of the player's animal in the direction it faces. It rolls,
+  // slows down and stops, then can be collected like any other. Animals it hits are knocked back.
+  shootPumpkin(p, variant, spread = 0) {
+    const a = p.animal;
+    const dir = a.angle - Math.PI / 2 + spread; // animal angles are measured from "up"
+    const start = a.size / 2 + 40;
+    const e = this.spawnPumpkin(true, variant, { x: a.x + Math.cos(dir) * start, y: a.y + Math.sin(dir) * start });
+    Object.assign(e, { vx: Math.cos(dir) * 1400, vy: Math.sin(dir) * 1400, shooter: p, angle: dir, shot: true });
+    this.moving.add(e);
+    return e;
+  }
+
+  // Moves shot pumpkins; returns their position records for this tick.
+  movePumpkins(dt) {
+    const records = [];
+    for (const e of this.moving) {
+      if (!this.entities.has(e.id)) {
+        this.moving.delete(e);
+        continue;
+      }
+      e.x = Math.min(MAP.x, Math.max(0, e.x + e.vx * dt));
+      e.y = Math.min(MAP.y, Math.max(0, e.y + e.vy * dt));
+      if (e.x === 0 || e.x === MAP.x) e.vx = -e.vx;
+      if (e.y === 0 || e.y === MAP.y) e.vy = -e.vy;
+      e.vx *= 0.94;
+      e.vy *= 0.94;
+      for (const o of this.players) {
+        const t = o.animal;
+        if (!t || o === e.shooter || Math.hypot(t.x - e.x, t.y - e.y) > t.size / 2 + e.size / 2) continue;
+        const d = Math.hypot(e.vx, e.vy) || 1;
+        t.x = Math.min(MAP.x, Math.max(0, t.x + (e.vx / d) * 120));
+        t.y = Math.min(MAP.y, Math.max(0, t.y + (e.vy / d) * 120));
+        o.target = { x: t.x, y: t.y };
+        e.vx *= -0.4;
+        e.vy *= -0.4;
+      }
+      records.push(record((w) => writePumpkinSync(w, e)));
+      if (Math.hypot(e.vx, e.vy) < 20) {
+        this.moving.delete(e);
+        e.shooter = null; // now anyone, the shooter included, can collect it
+      }
+    }
+    return records;
+  }
+
   // Touching a pumpkin collects it: XP by variant and tier, then a new one spawns elsewhere.
   collectPumpkin(p, e) {
-    const xp = pumpkinXP(e.subspecies, p.animal.tier, Lr);
+    const xp = pumpkinXP(e.subspecies, p.animal.tier, Lr.length);
     this.removeEntity(e.id);
     p.xp += xp;
     this.sendXP(p);
     this.serverMessage(p, `${PUMPKINS[e.subspecies].name} pumpkin! +${xp.toLocaleString("en-US")} XP`);
-    setTimeout(() => this.timer && this.spawnPumpkin(), PUMPKIN_RESPAWN_MS);
+    if (!e.shot) setTimeout(() => this.timer && this.spawnPumpkin(), PUMPKIN_RESPAWN_MS); // shot ones are extras
     this.checkProgress(p);
   }
 
   tick() {
     const dt = TICK_MS / 1000;
     const minimap = ++this.ticks % 40 === 1 ? this.minimapRecord() : null; // every 2 s
+    const pumpkins = this.movePumpkins(dt);
     const records = [];
     for (const p of this.players) {
       const a = p.animal;
@@ -377,7 +438,7 @@ export class Lobby {
     }
     for (const p of this.players) {
       if (p.ws.readyState !== 1) continue;
-      const groups = [["position", records]];
+      const groups = [["position", [...records, ...pumpkins]]];
       if (minimap) groups.push(["minimap", [minimap]]);
       // The client's camera starts at Infinity and only snaps into place on a camera update.
       const focus = p.animal ?? p.camera;
@@ -386,7 +447,7 @@ export class Lobby {
           x: precision(focus.x, MAP.x, 16), y: precision(focus.y, MAP.y, 16), zoom: precision(p.zoom ?? 1, 15, 8),
         })]]);
       // Always send something so the client's silence watchdog stays happy.
-      p.ws.send(records.length || focus || minimap ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
+      p.ws.send(records.length || pumpkins.length || focus || minimap ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
     }
   }
 
