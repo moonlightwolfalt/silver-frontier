@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { findClientChunk, loadClient } from "./client-runtime.js";
 import { REGIONS } from "./regions.js";
-import { generateWorld } from "./world.js";
+import { generateWorld, worldFromRecording } from "./world.js";
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
@@ -37,6 +37,7 @@ const s_ = client.get("s_");
 const [Ot, c_, gt, T, M, Lr, E, gC, pg, Le, D, cm, pm, sg, nr] =
   ["Ot", "c_", "gt", "T", "M", "Lr", "E", "gC", "pg", "Le", "D", "cm", "pm", "sg", "nr"].map((n) => client.get(n));
 const Writer = client.get("lt");
+const FOOD_TIERS = client.get("Ul");
 const Reader = client.get("x");
 const config = loadClient(findClientChunk(CLIENT_DIR, "protocolVersion:"));
 export const PROTOCOL_VERSION = config.get("c").protocolVersion;
@@ -72,6 +73,12 @@ export const encode = (name, data) => new Uint8Array(Ot[name].encode(data));
 
 // createEntity record: entity type, then B.readInitProperties and the type's own fields.
 function writeInit(w, e) {
+  if (e.raw) {
+    // Recorded from mope.io: send the record exactly as mope.io did, under our id.
+    const bytes = Buffer.from(e.raw, "base64");
+    bytes.writeUInt16LE(e.id, 2);
+    return w.writeBuffer(new Uint8Array(bytes));
+  }
   const cfg = Le[e.type];
   w.writeUint8(gC[e.type]);
   w.writeUint8(e.species); // createEntity peeks this byte, then B.readInitProperties reads it
@@ -96,6 +103,10 @@ function writeInit(w, e) {
       break;
     case "food":
       w.writeBoolean(false); // isProjectile
+      if (e.style) w.writeBits(e.style, 3); // cupcake, cookie and gift textures 1-7
+      break;
+    case "balloon":
+      w.writeUint8(e.color ?? 0); // colour and lean
       break;
     case "river":
       w.writeUint16(e.height); // rivers carry their length and width
@@ -192,6 +203,64 @@ function updateMessage(groups) {
   return written(w);
 }
 
+// ---------- maps recorded from mope.io ----------
+// The recorder (map-recorder.js) saves every createEntity record mope.io's server sends while you
+// explore. Static objects and foods are kept, decoded enough for our game logic (holes, terrain,
+// the volcano), and replayed to clients byte for byte.
+
+let recordedMap = null; // { entities, ... } from data/map.json, or null for generated worlds
+const SKIP_RECORDED = new Set(["animal", "ability", "pumpkin", "arena", "sandbox_arena", "flytrap_head", "snowball", "dust_cloud"]);
+const SKIP_FOODS = new Set(["carcass", "coin", "gem"]); // left behind by players, not part of the map
+
+export const recorderInfo = () => ({
+  update: St.update.encoder,
+  createGroup: 65535 - gt.createEntity,
+  protocol: PROTOCOL_VERSION,
+  skipTypes: [...SKIP_RECORDED].map((t) => gC[t]),
+  typeNames: Object.fromEntries(Object.keys(Le).map((t) => [gC[t], t])),
+});
+
+function decodeRecord(bytes) {
+  const r = new Reader(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), false);
+  const type = gC[r.readUint8()];
+  const cfg = Le[type];
+  if (!cfg) return null;
+  const e = { type, species: r.readUint8() };
+  r.readUint16(); // mope.io's id
+  e.biome = r.readUint8();
+  if (!cfg.dynamic || cfg.dynamicallyCreated) {
+    e.x = Reader.fromPrecision(r.readUint16(), MAP.x, 16);
+    e.y = Reader.fromPrecision(r.readUint16(), MAP.y, 16);
+    if (cfg.hasAngle) e.angle = Reader.fromPrecision(r.readUint8(), 2 * Math.PI, 8);
+  }
+  e.size = cfg.smallSize ? r.readUint8() : r.readUint16();
+  if (type === "river") e.height = r.readUint16();
+  return e;
+}
+
+// capture: the recorder's file, { format, protocol, records: { id: base64 } }
+export function decodeCapture(capture) {
+  if (capture?.format !== "silver-frontier-map-capture" || typeof capture.records !== "object")
+    throw new Error("not a map recorder file");
+  const entities = [];
+  const counts = {};
+  for (const raw of Object.values(capture.records)) {
+    let e;
+    try { e = decodeRecord(Buffer.from(String(raw), "base64")); } catch { continue; }
+    if (!e || SKIP_RECORDED.has(e.type) || e.x === undefined) continue;
+    if (e.type === "food" && SKIP_FOODS.has(D[e.species])) continue;
+    e.raw = raw;
+    entities.push(e);
+    const key = e.type === "food" ? `food:${D[e.species]}` : e.type;
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  if (!entities.some((e) => e.type !== "food")) throw new Error("the file has no map objects in it");
+  return {
+    recordedAt: capture.recordedAt ?? null, protocol: capture.protocol ?? null,
+    protocolMatches: capture.protocol == null || capture.protocol === PROTOCOL_VERSION, counts, entities,
+  };
+}
+
 // ---------- lobby ----------
 
 function biomeAt(x, y) {
@@ -210,19 +279,13 @@ export class Lobby {
     this.party = party; // party code for private party lobbies
     this.players = new Set();
     this.nextId = 1;
+    this.freeIds = []; // ids of removed entities, reused so ids stay small (animals sync 14-bit ids)
     this.entities = new Map(); // world objects and foods, by id
     this.moving = new Set(); // shot or kicked pumpkins still rolling
     this.goalShows = new Map(); // hole id -> goal display being shown
-    const seed = [...(party ?? region.id)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
-    const { entities, volcano } = generateWorld({ pg, E, D, cm, pm, sg, seed });
-    this.volcano = volcano;
-    for (const e of entities) this.addEntity(e, false);
-    this.holes = entities.filter((e) => e.type === "hole");
-    this.terrainZones = entities
-      .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
-      .sort((a, b) => (a.type === "island" ? -1 : 0) - (b.type === "island" ? -1 : 0)); // islands win over sea
-    this.rand = (() => { let x = seed; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32); })();
-    for (let i = 0; i < PUMPKIN_COUNT; i++) this.spawnPumpkin(false);
+    this.seed = [...(party ?? region.id)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+    this.rand = (() => { let x = this.seed; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32); })();
+    this.buildWorld();
     this.ticks = 0;
     this.timer = setInterval(() => this.tick(), TICK_MS);
   }
@@ -253,12 +316,44 @@ export class Lobby {
     });
   }
 
+  // The map recorded from mope.io (data/map.json) when there is one, otherwise a generated world.
+  buildWorld() {
+    const { entities, volcano } = recordedMap ? worldFromRecording(recordedMap, pg) : generateWorld({ pg, E, D, cm, pm, sg, seed: this.seed });
+    this.volcano = volcano;
+    for (const e of entities) this.addEntity(e, false);
+    this.holes = entities.filter((e) => e.type === "hole");
+    this.terrainZones = entities
+      .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
+      .sort((a, b) => (a.type === "island" ? -1 : 0) - (b.type === "island" ? -1 : 0)); // islands win over sea
+    for (let i = 0; i < PUMPKIN_COUNT; i++) this.spawnPumpkin(false);
+  }
+
+  // Swaps in a new map for everyone here: clears the old world from their screens, then sends
+  // the new one. Animals stay where they are.
+  rebuildWorld() {
+    const gone = [...this.entities.keys()];
+    this.entities.clear();
+    this.moving.clear();
+    this.goalShows.clear();
+    for (const p of this.players)
+      for (let i = 0; i < gone.length; i += 400)
+        p.ws.send(updateMessage([["destroyEntity", gone.slice(i, i + 400).map((id) => encode("destroyEntity", { hasKiller: false, id }))]]));
+    this.freeIds.push(...gone);
+    this.buildWorld();
+    const records = [...this.entities.values()].map((e) => record((w) => writeInit(w, e)));
+    for (let i = 0; i < records.length; i += 400) this.broadcast(updateMessage([["createEntity", records.slice(i, i + 400)]]));
+  }
+
+  allocId() {
+    return this.freeIds.pop() ?? this.nextId++;
+  }
+
   get playerCount() {
     return [...this.players].filter((p) => p.animal).length;
   }
 
   addEntity(e, announce = true) {
-    e.id = this.nextId++;
+    e.id = this.allocId();
     this.entities.set(e.id, e);
     if (announce) this.broadcast(updateMessage([["createEntity", [record((w) => writeInit(w, e))]]]));
     return e;
@@ -266,6 +361,7 @@ export class Lobby {
 
   removeEntity(id) {
     if (!this.entities.delete(id)) return false;
+    this.freeIds.push(id);
     this.broadcast(updateMessage([["destroyEntity", [encode("destroyEntity", { hasKiller: false, id })]]]));
     return true;
   }
@@ -290,7 +386,7 @@ export class Lobby {
       : pg.biomes[home] ?? pg.biomes.land);
     return {
       type: "animal",
-      id: p.animal?.id ?? this.nextId++,
+      id: p.animal?.id ?? this.allocId(),
       slug, subspecies,
       species: T[slug],
       tier: Lr.findIndex((t) => t.animals.includes(T[slug])) + 1,
@@ -326,6 +422,7 @@ export class Lobby {
     if (!p.animal) return;
     const id = p.animal.id;
     p.animal = null;
+    this.freeIds.push(id);
     this.broadcast(updateMessage([["destroyEntity", [encode("destroyEntity", { hasKiller: false, id })]]]));
     if (stats)
       p.ws.send(encode("stopGameSession", {
@@ -519,6 +616,8 @@ export class Lobby {
       }
       if (e.type !== "food") continue;
       if (Math.hypot(e.x - a.x, e.y - a.y) > a.size / 2 + e.size / 2) continue;
+      const range = FOOD_TIERS[D[e.species]]; // the client's own table of which tiers eat what
+      if (range && (a.tier < range.minimumTier || a.tier > range.maximumTier)) continue;
       this.removeEntity(e.id);
       p.xp += this.foodXP(a);
       this.sendXP(p);
@@ -674,9 +773,10 @@ export class Lobby {
 
 // ---------- server ----------
 
-export function createGameServer({ accounts, records = null, parties }) {
+export function createGameServer({ accounts, records = null, parties, map = null }) {
   accountsRef = accounts;
   recordsRef = records;
+  recordedMap = map;
   const lobbies = new Map(REGIONS.map((r) => [r.id, new Lobby(r)]));
   const wss = new WebSocketServer({
     noServer: true,
@@ -829,5 +929,10 @@ export function createGameServer({ accounts, records = null, parties }) {
     relink,
     stats: () => Object.fromEntries([...lobbies].map(([id, l]) => [id, l.playerCount])),
     lobbies,
+    // Switches every lobby to a recorded map (or back to generated worlds with null).
+    setMap(map) {
+      recordedMap = map;
+      for (const l of [...lobbies.values(), ...parties.lobbies()]) l.rebuildWorld();
+    },
   };
 }

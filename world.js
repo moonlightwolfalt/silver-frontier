@@ -11,19 +11,35 @@ function rng(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
 }
 
+// Food lists per biome. A name repeated is picked more often; a [name, weight] pair sets the weight.
 export const FOODS = {
-  land: ["berry", "mushroom", "red_mushroom", "carrot", "pear", "nut", "raspberry", "watermelon", "melon", "orange", "mango", "banana"],
-  arctic: ["cloud_berry", "nut", "berry", "mushroom"],
-  desert: ["cactus", "cactus_pear", "date", "aloevera", "aloevera_leaf", "melon"],
-  ocean: ["kelp", "sea_weed", "clam", "conch", "starfish", "coconut"],
-  volcano: ["pepper", "flesh", "bone"],
-  lake: ["lilypad", "water"],
+  land: [
+    "berry", "berry", "berry", "mushroom", "mushroom", "red_mushroom", "mushroom_bush", "carrot", "carrot",
+    "pear", "raspberry", "raspberry", "watermelon", "watermelon_slice", "melon", "melon_slice", "orange",
+    "mango", "banana", "duck_egg", "honeycomb", ["golden_egg", 0.15],
+  ],
+  arctic: ["cloud_berry", "cloud_berry", "cloud_berry", "nut", "nut", "berry", "mushroom", "raspberry"],
+  desert: ["cactus", "cactus_pear", "cactus_pear", "date", "date", "aloevera", "aloevera_leaf", "aloevera_leaf", "melon", "ostrich_egg"],
+  ocean: ["kelp", "kelp", "sea_weed", "sea_weed", "clam", "conch", "starfish", "starfish", "coconut"],
+  volcano: ["pepper", "pepper", "flesh", "bone"],
+  lake: ["lilypad", "lilypad", "water"],
+  // Put out around the giant cakes, smallest first (each is for bigger animals than the last).
+  party: ["cake_crumb", "cake_crumb", "cake_crumb", "cookie", "cookie", "cupcake", "cupcake", "cake_slice", ["gift", 0.5]],
 };
+// Foods drawn larger than the usual 14-24.
+const BIG_FOODS = new Set(["mushroom_bush", "melon", "watermelon", "coconut", "beehive", "cactus", "aloevera", "conch", "gift", "cake_slice", "ostrich_egg"]);
+// Party foods with a 3-bit style (textures 1-7).
+export const STYLED_FOODS = new Set(["cupcake", "cookie", "gift"]);
 
 export function generateWorld({ pg, E, D, cm, pm, sg, seed = 1 }) {
   const rand = rng(seed);
   const between = (a, b) => a + rand() * (b - a);
-  const pick = (list) => list[Math.floor(rand() * list.length)];
+  const pick = (list) => {
+    const weight = (f) => (Array.isArray(f) ? f[1] : 1);
+    let r = rand() * list.reduce((t, f) => t + weight(f), 0);
+    for (const f of list) if ((r -= weight(f)) < 0) return Array.isArray(f) ? f[0] : f;
+    return list[0];
+  };
   const rect = (b, pad = 0) => ({
     x0: b.x - b.width / 2 + pad, x1: b.x + b.width / 2 - pad,
     y0: b.y - b.height / 2 + pad, y1: b.y + b.height / 2 - pad,
@@ -99,23 +115,78 @@ export function generateWorld({ pg, E, D, cm, pm, sg, seed = 1 }) {
     scatter(area, 8, (x, y) => add("rock", 0, "ocean", x, y, between(70, 130)), false);
   }
 
-  // Foods
-  const food = (biome, list, area, n, avoid = true) =>
-    scatter(area, n, (x, y) => add("food", D[pick(list)], biome, x, y, between(14, 24)), avoid);
-  food("land", FOODS.land, areas.land, 260);
-  food("arctic", FOODS.arctic, areas.arctic, 110, false);
-  food("desert", FOODS.desert, areas.desert, 110, false);
-  food("ocean", FOODS.ocean, areas.leftOcean, 70, false);
-  food("ocean", FOODS.ocean, areas.rightOcean, 70, false);
-  for (let i = 0; i < 40; i++) {
-    const a = rand() * Math.PI * 2, d = rand() * (volcano.r - 40);
-    add("food", D[pick(FOODS.volcano)], "volcano", volcano.x + Math.cos(a) * d, volcano.y + Math.sin(a) * d, between(14, 22));
+  // Flytraps (land), healing stones (around the volcano and a few on land)
+  scatter(areas.land, 8, (x, y) => add("flytrap", 0, "land", x, y, between(70, 100)));
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + rand(), d = volcano.r + between(200, 320);
+    add("healing_stone", 0, "land", volcano.x + Math.cos(a) * d, volcano.y + Math.sin(a) * d, between(90, 120));
   }
-  for (const lake of out.filter((e) => e.type === "lake"))
-    for (let i = 0; i < 3; i++) {
-      const a = rand() * Math.PI * 2, d = rand() * lake.size * 0.35;
-      add("food", D[pick(FOODS.lake)], "land", lake.x + Math.cos(a) * d, lake.y + Math.sin(a) * d, between(14, 20));
+  scatter(areas.land, 4, (x, y) => add("healing_stone", 0, "land", x, y, between(90, 120)));
+  scatter(areas.desert, 2, (x, y) => add("healing_stone", 0, "desert", x, y, between(90, 120)), false);
+  scatter(areas.arctic, 2, (x, y) => add("healing_stone", 0, "arctic", x, y, between(90, 120)), false);
+
+  // Party: a giant cake in land, desert and arctic, slingshots, and balloons tied around both.
+  const balloons = (x, y, ring, n, biome) => {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + between(-0.2, 0.2);
+      add("balloon", 0, biome, x + Math.cos(a) * ring, y + Math.sin(a) * ring, between(40, 55), { color: Math.floor(rand() * 256) });
     }
+  };
+  const cakes = [
+    ["land", B.land.x + B.land.width * 0.2, B.land.y + B.land.height * 0.05],
+    ["arctic", B.arctic.x - B.arctic.width * 0.2, B.arctic.y],
+    ["desert", B.desert.x + B.desert.width * 0.2, B.desert.y],
+  ];
+  for (const [biome, x, y] of cakes) {
+    add("cake", 0, biome, x, y, 520);
+    balloons(x, y, 300, 8, biome);
+  }
+  const slingshots = [
+    ["land", areas.land], ["land", areas.land], ["arctic", areas.arctic], ["desert", areas.desert],
+  ];
+  for (const [biome, area] of slingshots)
+    scatter(area, 1, (x, y) => {
+      add("slingshot", 0, biome, x, y, 120);
+      balloons(x, y, 110, 3, biome);
+    }, biome === "land");
+
+  // Foods
+  const addFood = (name, biome, x, y) => {
+    const extra = STYLED_FOODS.has(name) ? { style: 1 + Math.floor(rand() * 7) } : {};
+    add("food", D[name], biome, x, y, BIG_FOODS.has(name) ? between(28, 40) : between(14, 24), extra);
+  };
+  const food = (biome, list, area, n, avoid = true) => scatter(area, n, (x, y) => addFood(pick(list), biome, x, y), avoid);
+  food("land", FOODS.land, areas.land, 600);
+  food("arctic", FOODS.arctic, areas.arctic, 240, false);
+  food("desert", FOODS.desert, areas.desert, 240, false);
+  food("ocean", FOODS.ocean, areas.leftOcean, 160, false);
+  food("ocean", FOODS.ocean, areas.rightOcean, 160, false);
+  const around = (x, y, r0, r1, n, fn) => {
+    for (let i = 0; i < n; i++) {
+      const a = rand() * Math.PI * 2, d = between(r0, r1);
+      fn(x + Math.cos(a) * d, y + Math.sin(a) * d);
+    }
+  };
+  around(volcano.x, volcano.y, 0, volcano.r - 40, 70, (x, y) => addFood(pick(FOODS.volcano), "volcano", x, y));
+  for (const lake of out.filter((e) => e.type === "lake"))
+    around(lake.x, lake.y, 0, lake.size * 0.35, 4, (x, y) => addFood(pick(FOODS.lake), "land", x, y));
+  for (const [biome, x, y] of cakes) around(x, y, 300, 520, 26, (fx, fy) => addFood(pick(FOODS.party), biome, fx, fy));
+  // Beehives hang by a dozen land trees, with honeycomb around them.
+  for (const tree of out.filter((e) => e.type === "tree" && e.biome === E.land).slice(0, 12)) {
+    const a = rand() * Math.PI * 2;
+    addFood("beehive", "land", tree.x + Math.cos(a) * tree.size * 0.6, tree.y + Math.sin(a) * tree.size * 0.6);
+    around(tree.x, tree.y, tree.size * 0.6, tree.size, 2, (x, y) => addFood("honeycomb", "land", x, y));
+  }
 
   return { entities: out, volcano, areas };
+}
+
+// A world from a map recorded on mope.io (see map-recorder.js): its objects and foods as recorded.
+// The volcano's position comes from its volcano object (a map without one still gets a spawn
+// point for volcano animals, with no lava area).
+export function worldFromRecording(map, pg) {
+  const entities = map.entities.map((e) => ({ ...e }));
+  const v = entities.find((e) => e.type === "volcano");
+  const B = pg.biomes.land;
+  return { entities, volcano: v ? { x: v.x, y: v.y, r: v.size / 2 } : { x: B.x + B.width * 0.22, y: B.y - B.height * 0.18, r: 0 } };
 }

@@ -6,6 +6,8 @@
 //                           /new opens a private party (parties.js)
 //   /api/...                accounts, email/password login, shop, inventory (accounts.js)
 //   /api/servers            players per region, for the client's server list
+//   /map-recorder           records the real mope.io map (bookmarklet) and uploads it
+//   /api/map                GET the map in use; POST a recording (owners); DELETE for generated
 //   /__health               health check for hosts (no password needed)
 // Hosting: SITE_PASSWORD locks the whole site behind a password (site-gate.js); DATA_DIR and
 // ASSETS_DIR move the account database and downloaded assets onto a persistent volume;
@@ -26,11 +28,14 @@ import { CATEGORIES, generate as generateAssets } from "./asset-catalog.js";
 import { createAccounts } from "./accounts.js";
 import { createGate } from "./site-gate.js";
 import { createRecords } from "./records.js";
+import { recorderPage } from "./map-recorder.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS = path.resolve(process.env.ASSETS_DIR ?? path.join(ROOT, "assets"));
 const DATA = path.resolve(process.env.DATA_DIR ?? path.join(ROOT, "data"));
+// The map recorded from mope.io (uploaded on /map-recorder); without it worlds are generated.
+const MAP_FILE = path.resolve(process.env.MAP_FILE ?? path.join(DATA, "map.json"));
 const gate = createGate(process.env.SITE_PASSWORD);
 // On a hosting service, never start without the password: the site serves mope.io's client and art.
 const HOST = process.env.RAILWAY_PROJECT_ID ? "Railway" : process.env.RENDER ? "Render" : null;
@@ -141,7 +146,46 @@ async function loadItemIds() {
   }
 }
 
-let game = null; // set once the client is fetched: { accounts, server }
+let game = null; // set once the client is fetched: { accounts, server, map, decodeCapture, recorderInfo }
+
+const mapStatus = (map) => map && {
+  recordedAt: map.recordedAt,
+  objects: map.entities.filter((e) => e.type !== "food").length,
+  foods: map.entities.filter((e) => e.type === "food").length,
+  counts: map.counts,
+};
+
+// GET: the map in use. POST (owners): import a recorder file. DELETE (owners): back to generated.
+async function handleMap(req, res) {
+  if (req.method === "GET") return json(res, 200, { map: mapStatus(game.map) });
+  const acc = game.accounts.fromRequest(req);
+  if (!acc || acc.role < game.accounts.ROLE.DEVELOPER) return json(res, 403, { error: "sign in with an owner account first" });
+  if (req.method === "DELETE") {
+    fs.rmSync(MAP_FILE, { force: true });
+    game.map = null;
+    game.server.setMap(null);
+    return json(res, 200, { message: "Back to the generated map in every region." });
+  }
+  if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let map;
+  try {
+    map = game.decodeCapture(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+  } catch (e) {
+    return json(res, 400, { error: e.message });
+  }
+  fs.mkdirSync(path.dirname(MAP_FILE), { recursive: true });
+  fs.writeFileSync(MAP_FILE, JSON.stringify(map));
+  game.map = map;
+  game.server.setMap(map);
+  const s = mapStatus(map);
+  return json(res, 200, {
+    message: `Loaded ${s.objects} objects and ${s.foods} foods into every region.` +
+      (map.protocolMatches ? "" : " Warning: it was recorded with a different mope.io version than this server's client; run the setup again if things look wrong."),
+    map: s,
+  });
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
@@ -163,6 +207,11 @@ const server = http.createServer(async (req, res) => {
     catch (e) { return json(res, 500, { error: String(e.message) }); }
   }
   if (p === "/api/servers") return json(res, 200, game?.server.stats() ?? {});
+  if (game && p === "/map-recorder") {
+    res.writeHead(200, { "Content-Type": TYPES[".html"], "Cache-Control": "no-store" });
+    return res.end(recorderPage(game.recorderInfo, mapStatus(game.map)));
+  }
+  if (game && p === "/api/map") return handleMap(req, res);
   if (p.startsWith("/api/") && game) return game.accounts.handleApi(req, res, req.url.slice("/api".length), origin);
   // The client tells the game server about sign-in changes: POST <server url>/auth/login|logout.
   if (game && /^\/play\/[^/]+(\/[^/]+)?\/auth\/(login|logout)$/.test(p) && req.method === "POST") {
@@ -206,7 +255,9 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, async () => {
   console.log(`http://localhost:${PORT}${gate ? " (password protected)" : ""} · version ${VERSION}`);
   if (!fs.existsSync(path.join(SITE, "index.html"))) return console.log("client not fetched yet; run: bun run setup");
-  const [{ createGameServer, game: data }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
+  const [{ createGameServer, game: data, decodeCapture, recorderInfo }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
+  let map = null;
+  try { map = JSON.parse(fs.readFileSync(MAP_FILE, "utf8")); console.log(`using the recorded map in ${MAP_FILE}`); } catch {}
   const records = createRecords({ dataDir: DATA });
   const accounts = createAccounts({
     records,
@@ -214,7 +265,10 @@ server.listen(PORT, async () => {
     itemIds: await loadItemIds(),
     animalSlugs: Object.keys(data.M),
   });
-  game = { accounts, server: createGameServer({ accounts, records, parties: createParties() }) };
+  game = {
+    accounts, map, decodeCapture, recorderInfo: recorderInfo(),
+    server: createGameServer({ accounts, records, parties: createParties(), map }),
+  };
   // DOWNLOAD_ASSETS=0 skips the up-front download (hosts without a persistent disk); files are
   // then fetched from mope.io the first time the game asks for them.
   if (process.env.DOWNLOAD_ASSETS !== "0" && !fs.existsSync(path.join(ASSETS, "index.json"))) {

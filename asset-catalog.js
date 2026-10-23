@@ -217,6 +217,12 @@ export function buildCandidates(clientDir, itemIds = []) {
     site("Foods", `foods/${name}/${name}`);
   }
   for (const name of enums.wp ?? []) if (name) site("Foods", `foods/carcass/${name.toLowerCase()}`);
+  // Party foods come in styles 1-7: foods/<name>/<style>/{edible,<name>}
+  for (const name of ["cupcake", "cookie", "gift"])
+    for (let style = 1; style <= 7; style++) {
+      site("Foods", `foods/${name}/${style}/edible`);
+      site("Foods", `foods/${name}/${style}/${name}`);
+    }
 
   // Literal paths from the client
   for (const p of parsePathLiterals(src + "\n" + extra)) {

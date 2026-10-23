@@ -60,7 +60,7 @@ playable meanwhile, because missing files are fetched from mope.io as needed.
 
 Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATA_DIR` (accounts, default
 `./data`), `ASSETS_DIR` (default `./assets`), `DOWNLOAD_ASSETS=0` (skip the asset download at
-startup). `/__health` answers without the password and shows the running commit (`ok 1a2b3c4`),
+startup), `MAP_FILE` (recorded map, default `data/map.json`). `/__health` answers without the password and shows the running commit (`ok 1a2b3c4`),
 so you can check a deploy is up to date. The page and scripts are sent with
 `Cache-Control: no-store`, so a redeploy reaches players on their next visit.
 
@@ -120,7 +120,14 @@ an allowed email before the site loads (free for up to 50 users).
   invite link. Anyone who opens it lands in the same party.
 - **World:** every biome gets its trees, hills, rocks, lakes, mud, puddles, holes and foods.
   The land biome has a volcano with lava pools and volcano foods, and the oceans have palm
-  islands. Eaten food comes back after a few seconds.
+  islands. There are flytraps and healing stones, a giant cake with balloons in land, desert and
+  arctic (party foods around it: crumbs, cookies, cupcakes, cake slices, gifts), slingshots with
+  balloons, and beehives by land trees. Each world has about 1,600 foods across 45 kinds, from
+  berries to mushroom bushes, eggs, melons, conches and cacti. As in mope.io, each food can only be eaten by the
+  tiers in the client's own table (berries up to tier 8, watermelons from tier 11, and so on).
+  Eaten food comes back after a few seconds. The cake and slingshots are scenery for now: they
+  can't be climbed or used yet. To play on mope.io's real map instead, record it (see
+  [The real mope.io map](#the-real-mopeio-map)).
 - **XP cap:** 10 trillion (`limits.js`). mope.io sends XP as a 32-bit number, which stops at
   4.29 billion, so the client patch turns it into a 64-bit value. At tier 17 the XP bar shows
   progress toward the cap ("1.5B XP / 10T XP"), filled on the same log scale as the growth.
@@ -180,6 +187,24 @@ an allowed email before the site loads (free for up to 50 users).
   requirement, so the XP bar and size match the animal. Picking a lower one keeps your XP, and
   the automatic upgrade menu waits until you earn past a new tier.
 
+## The real mope.io map
+
+mope.io's server decides where everything is, and it isn't in the client, so the map has to be
+recorded from a real game. Open **/map-recorder** on your server and follow the three steps:
+
+1. Add the **Mope map recorder** bookmark. On a computer, drag the button to the bookmarks bar.
+   On iPhone, bookmark any page, edit it and paste the code from the page as its address.
+2. On mope.io, tap the bookmark, then **Reconnect** in the black box, then the game's
+   **Try Again**. Play and travel through every biome while the box counts what it has seen,
+   then press **Save map file** (`mope-map.json`).
+3. Upload the file on /map-recorder while signed in as an owner. Every region switches to it
+   straight away, and it's saved to `data/map.json` (or `MAP_FILE`) for restarts.
+   **Back to generated map** undoes it.
+
+Objects and foods are replayed exactly as mope.io sent them. Pumpkins and animals aren't
+recorded, and food left by players (carcasses, coins, gems) is ignored. On hosts without a
+persistent disk (Render free), the file is lost on each redeploy, so upload it again.
+
 ## Accounts
 
 Press **Log in** and pick any provider. A sign-in page opens where you can log in or register
@@ -213,7 +238,8 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `patch-client.ts` | Points the client at this server: regions, account API, skins |
 | `server.js` | HTTP server: client, assets, `/api` accounts, `/play` game sockets |
 | `game-server.js` | Game protocol and lobbies (spawn, move, eat, upgrades, chat) |
-| `world.js` | Generates each lobby's terrain and foods |
+| `world.js` | Generates each lobby's terrain and foods, or loads a recorded map |
+| `map-recorder.js` | The /map-recorder page and the bookmarklet that records mope.io's map |
 | `pumpkins.js`, `tools/make-pumpkins.py`, `custom-assets/` | Pumpkin variants, their chances and XP, and the custom textures |
 | `parties.js` | Party lobbies and invite codes |
 | `records.js` | Worldwide Most XP and Pumpkin goals boards (weekly, monthly, all time) |
