@@ -33,6 +33,54 @@ playable meanwhile, because missing files are fetched from mope.io as needed.
 Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATA_DIR` (accounts, default
 `./data`), `ASSETS_DIR` (default `./assets`). `/__health` answers without the password.
 
+## Hosting with Cloudflare Tunnel
+
+The server runs on your own computer (or any machine), and Cloudflare gives it a public HTTPS
+address. No router ports are opened, and game connections work through the tunnel. The machine
+has to stay on while people play.
+
+### Quick test: a temporary link, no account needed
+
+Needs [Node 22](https://nodejs.org), [Bun](https://bun.sh) and
+[cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+
+```
+bun install
+bun run setup
+SITE_PASSWORD=choose-a-password OWNER_EMAILS=you@example.com node server.js
+# in a second terminal:
+cloudflared tunnel --url http://localhost:3000
+```
+
+On Windows PowerShell, start the server with
+`$env:SITE_PASSWORD="choose-a-password"; $env:OWNER_EMAILS="you@example.com"; node server.js`.
+
+cloudflared prints an address like `https://something.trycloudflare.com`. It changes every time
+you start it, so it's only for testing.
+
+### Permanent address on your own domain
+
+Needs a free Cloudflare account, a domain added to Cloudflare, and
+[Docker](https://docs.docker.com/get-docker/) (Docker Desktop on Windows and Mac).
+
+1. In the Cloudflare dashboard, open **Zero Trust → Networks → Tunnels → Create a tunnel**,
+   choose **Cloudflared**, and name it.
+2. On the install step, pick **Docker** and copy the long token from the command it shows.
+3. Under **Public Hostname**, add e.g. `mope.yourdomain.com` with service **HTTP** and URL
+   **`app:3000`**.
+4. In this folder, copy `.env.example` to `.env` and fill in `SITE_PASSWORD`, `OWNER_EMAILS` and
+   `TUNNEL_TOKEN`.
+5. Run `docker compose up -d --build`. The build fetches and patches the mope.io client.
+6. Open `https://mope.yourdomain.com`, enter the password, then **Log in** and register with
+   your owner email.
+
+Accounts and assets are stored in `./data`. `docker compose logs -f app` shows the server log,
+and `docker compose down` stops it.
+
+Optional extra lock: in **Zero Trust → Access → Applications**, add the hostname as a
+self-hosted application with an email policy. Cloudflare then asks for a one-time code sent to
+an allowed email before the site loads (free for up to 50 users).
+
 ## Playing
 
 - **Regions:** USA East, USA Central, USA West, Europe, Asia, Oceania and Brazil. Each is its own
@@ -117,6 +165,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `regions.js` | The region list |
 | `site-gate.js` | Site-wide password for hosted copies (`SITE_PASSWORD`) |
 | `Dockerfile`, `railway.json` | Railway / Docker deployment |
+| `docker-compose.yml`, `.env.example` | Your own machine + Cloudflare Tunnel |
 | `client-runtime.js` | Loads the client's own protocol code so the server encodes exactly like it |
 | `asset-catalog.js` | Lists every asset from the client's tables and downloads it into `assets/<Category>/` |
 

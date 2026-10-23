@@ -22,3 +22,4 @@ mope-dump/
 assets/
 node_modules/
 data/
+.env

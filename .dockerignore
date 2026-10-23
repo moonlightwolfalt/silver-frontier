@@ -3,3 +3,4 @@ mope-dump
 assets
 data
 .git
+.env
