@@ -271,14 +271,37 @@ export class Lobby {
     }));
   }
 
+  // Highest tier (1-17) the player's XP has reached, from the client's own XP table (Lr[i] is
+  // tier i+1's requirement).
+  earnedTier(p) {
+    let tier = 1;
+    while (tier < Lr.length && p.xp >= Lr[tier].requiredXP) tier++;
+    return tier;
+  }
+
+  // Natural progression: once XP reaches the next tier, offer that tier's animals, all the way
+  // to tier 17. One tier per menu, like mope.io; the next menu follows the pick if XP allows.
+  checkProgress(p) {
+    if (!p.animal || p.menu.length) return;
+    if (this.earnedTier(p) > p.animal.tier) this.showTier(p, p.animal.tier + 1);
+  }
+
+  // Food is worth about 1/30 of the gap to the next tier, so every tier takes a similar effort.
+  foodXP(a) {
+    const next = Lr[a.tier]?.requiredXP;
+    if (next === undefined) return 25_000;
+    return Math.max(25, Math.round((next - Lr[a.tier - 1].requiredXP) / 30));
+  }
+
   eat(p) {
     const a = p.animal;
     for (const e of this.entities.values()) {
       if (e.type !== "food") continue;
       if (Math.hypot(e.x - a.x, e.y - a.y) > a.size / 2 + e.size / 2) continue;
       this.removeEntity(e.id);
-      p.xp += 25;
+      p.xp += this.foodXP(a);
       this.sendXP(p);
+      this.checkProgress(p);
       const { id, ...food } = e;
       setTimeout(() => this.timer && this.addEntity(food), 8000);
     }
@@ -407,6 +430,7 @@ export function createGameServer({ accounts, parties }) {
         p.menu = [];
         p.skinOverride = msg.skinOverride;
         if (p.animal && slug) lobby.spawn(p, slug);
+        lobby.checkProgress(p);
         return;
       }
       case "chatMessage": {

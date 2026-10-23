@@ -13,7 +13,7 @@ const COMMANDS = {
   players: { role: 1, usage: "/players", run: players },
   animal: { role: 4, usage: "/animal <name> [subspecies]", run: animal },
   tier: { role: 4, usage: "/tier <1-17>  (opens that tier's upgrade menu)", run: tier },
-  xp: { role: 4, usage: "/xp <amount>", run: xp },
+  xp: { role: 4, usage: "/xp <amount>  (upgrades follow, up to tier 17 at 10M)", run: xp },
   size: { role: 4, usage: "/size <size>", run: size },
   speed: { role: 4, usage: "/speed <multiplier>", run: speed },
   zoom: { role: 4, usage: "/zoom <0.2-15>", run: zoom },
@@ -92,6 +92,7 @@ function tier(ctx, [n]) {
 function xp(ctx, [n]) {
   ctx.player.xp = Math.max(0, Number(n) || 0);
   ctx.lobby.sendXP(ctx.player);
+  ctx.lobby.checkProgress(ctx.player);
 }
 
 function size(ctx, [n]) {

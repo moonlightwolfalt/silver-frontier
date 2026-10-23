@@ -18,8 +18,12 @@ bun run start    # http://localhost:3000 — everything runs on this one port
 - **World:** every biome gets its trees, hills, rocks, lakes, mud, puddles, holes and foods.
   The land biome has a volcano with lava pools and volcano foods, and the oceans have palm
   islands. Eaten food comes back after a few seconds.
-- **Sandbox keys:** **Up**/**Down** open the upgrade menu for the next/previous tier, and
-  **1–9** pick an animal. In the console, `localtest.up(n)` / `localtest.down(n)` do the same.
+- **Upgrades, tiers 1–17:** eating earns XP, and when it reaches the next tier (the game's own
+  table, 100 XP for tier 2 up to 10M for tier 17) the upgrade menu opens with that tier's
+  animals. Each tier takes about 30 foods.
+- **Sandbox keys:** **Up**/**Down** step the upgrade menu through all 17 tiers, from Mouse to
+  Black/King Dragon. Click an animal, or press its number key (the keys reach the first nine
+  cards; click the rest). In the console, `localtest.up(n)` / `localtest.down(n)` do the same.
 
 ## Accounts
 
