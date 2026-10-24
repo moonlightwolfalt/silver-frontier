@@ -20,5 +20,9 @@
   "dependencies": {
     "acorn": "^8.19.0",
     "ws": "^8.22.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moonlightwolfalt/silver-frontier"
   }
 }

@@ -4,10 +4,11 @@
 //   - Meteor shower: meteors land over half a minute. Each one hurts animals near it, leaves a
 //     lava crater for a few seconds and scatters treats.
 //   - Pumpkin rush: a dozen rare pumpkins roll out (gold and up).
-//   - Boss: a huge, tough monster prowls for 5 minutes. It takes a fifth of normal damage, and
+//   - Boss: a huge, tough monster of its own (Behemoth, Leviathan, Frost Wyrm, Sand Colossus)
+//     prowls for 5 minutes. It takes a fifth of normal damage, and
 //     whoever eats it gets five times the XP and 100 coins.
 // Staff can start one with /event <double|meteors|pumpkins|boss>.
-import { D, pm, MAP, DEATH } from "./game-server.js";
+import { D, pm, MAP, DEATH, BOSS_SLUGS } from "./game-server.js";
 import { addBot, removeBot } from "./bots.js";
 import { PUMPKINS } from "./pumpkins.js";
 
@@ -15,7 +16,8 @@ const FIRST_MS = 3 * 60_000;
 const GAP_MS = [6 * 60_000, 10 * 60_000];
 const DOUBLE_XP_MS = 3 * 60_000;
 const BOSS_MS = 5 * 60_000;
-const BOSSES = ["dino_monster", "sea_monster", "ice_monster", "giant_scorpion"];
+// Event-only monsters (custom-biomes.json "bosses"), never in the upgrade menus.
+const BOSSES = () => [...BOSS_SLUGS];
 const TREATS = ["golden_egg", "watermelon", "mushroom_bush", "gift", "cupcake", "melon"];
 export const EVENT_NAMES = ["double", "meteors", "pumpkins", "boss"];
 
@@ -47,7 +49,7 @@ export function startEvent(lobby, name, now = Date.now()) {
     }
     case "boss": {
       if (lobby.boss) return;
-      const slug = pick(BOSSES);
+      const slug = pick(BOSSES());
       const boss = addBot(lobby, { name: `👑 ${lobby.animalName(slug)}`, slug, boss: true });
       if (!boss.animal) return;
       boss.xp = 50_000_000_000;

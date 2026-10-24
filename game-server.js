@@ -221,6 +221,11 @@ function segmentDistance(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+// An animal's tier from the client's tier table. Bosses (custom-biomes.json) are in no tier's
+// menu and fight as tier 17.
+export const BOSS_SLUGS = new Set((CUSTOM.bosses ?? []).map((b) => b.slug));
+const tierOf = (slug) => Lr.findIndex((t) => t.animals.includes(T[slug])) + 1 || (BOSS_SLUGS.has(slug) ? 17 : 1);
+
 // Picks a form by the client's rarity weights (index 0 is the normal one).
 function rollSubspecies(cfg) {
   const weights = cfg?.subspeciesRarities ?? [1];
@@ -659,7 +664,7 @@ export class Lobby {
       id: p.animal?.id ?? this.allocId(),
       slug, subspecies,
       species: T[slug],
-      tier: Lr.findIndex((t) => t.animals.includes(T[slug])) + 1,
+      tier: tierOf(slug),
       biome: wireBiome(home),
       biomeHere: wireBiome(home),
       size: cfg.minimumSize,
@@ -1059,7 +1064,7 @@ export class Lobby {
   // Changes the player's animal. Moving to a higher tier than XP has reached raises XP to that
   // tier's requirement, so the XP bar and size match the animal; moving down keeps XP.
   switchAnimal(p, slug, subspecies = 0, sandbox = true) {
-    const tier = Lr.findIndex((t) => t.animals.includes(T[slug])) + 1;
+    const tier = tierOf(slug);
     const before = p.animal?.tier ?? 0;
     p.xp = Math.max(p.xp, Lr[tier - 1].requiredXP);
     if (!sandbox && tier > before) this.giveCoins(p, tier, "tier");

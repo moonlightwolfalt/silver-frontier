@@ -122,6 +122,8 @@ function __cbSetLayer(name) {
   ((m.biomes = m.generateBiomes(pg.biomes)), (m.shape = m.generateShape()));
   m.init().then(() => $.minimap?.generate?.());
 }
+globalThis.__sfChangelog = () =>
+  (globalThis.__sfChangelogP ??= fetch(\`\${location.origin}/api/changelog\`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
 function __cbLayerMessage(e) {
   let m = e?.message;
   if (typeof m !== \`string\` || !m.startsWith(\`\\u0001layer:\`)) return !1;
@@ -197,6 +199,11 @@ const edits: [string, string, string?][] = [
     "              ? t\n              : E[t];\n      return n === void 0 || e.biome === n",
     "              ? t\n              : E[t] > E.volcano\n                ? void 0\n                : E[t];\n      return n === void 0 || e.biome === n",
   ],
+  // The changelog box shows this server's commits (/api/changelog) instead of mope.io's notes.
+  [
+    "async function Pf(e) {\n  let t = pr(e) ? e : `en`,",
+    "async function Pf(e) {\n  let __sf = await globalThis.__sfChangelog?.();\n  if (__sf?.versions?.length) return __sf;\n  let t = pr(e) ? e : `en`,",
+  ],
   // Layer switches (custom biomes) ride on serverMessage with a \u0001layer: prefix.
   ["w.on(`serverMessage`, function (e) {\n", "w.on(`serverMessage`, function (e) {\n  if (__cbLayerMessage(e)) return;\n"],
 ];
@@ -260,7 +267,10 @@ const tick = (s: string) => "`" + s.replace(/[`\\$]/g, (c) => "\\" + c) + "`";
 const enumEntries = (names: string[], first: number) => names.map((n, i) => `(e[(e.${n} = ${first + i})] = ${tick(n)}),`).join("");
 
 const biomeIds = Object.keys(CUSTOM.biomes);
-cbUpsert("(e[(e.mouse = 0)] = `mouse`),", "T", enumEntries(CUSTOM.animals.map((a: any) => a.slug), cbEnumNext("(e[(e.mouse = 0)] = `mouse`),", "T")));
+// Bosses are animals to the client (sprites, names, abilities) but in no tier's upgrade menu.
+const BOSSES = CUSTOM.bosses ?? [];
+const creatures = [...CUSTOM.animals, ...BOSSES];
+cbUpsert("(e[(e.mouse = 0)] = `mouse`),", "T", enumEntries(creatures.map((a: any) => a.slug), cbEnumNext("(e[(e.mouse = 0)] = `mouse`),", "T")));
 cbUpsert("(e[(e.berry = 1)] = `berry`),", "D", enumEntries(CUSTOM.foods.map((f: any) => f.slug), cbEnumNext("(e[(e.berry = 1)] = `berry`),", "D")));
 cbUpsert("(e[(e.volcano = 4)] = `volcano`),", "E", enumEntries(biomeIds, cbEnumNext("(e[(e.volcano = 4)] = `volcano`),", "E")));
 
@@ -270,16 +280,18 @@ const speedsOf = (a: any) => {
   if (WATER_PLANS.has(a.plan) && a.biome === "swamp") Object.assign(s, { land: 0.4, water: 1, mud: 1 });
   return s;
 };
-cbUpsert("var M = zr({\n", "M", "\n" + CUSTOM.animals.map((a: any) => {
-  const sp = speedsOf(a);
+const BOSS_SPEEDS: Record<string, any> = { ocean: { land: 0.3, water: 1, mud: 0.5 } };
+cbUpsert("var M = zr({\n", "M", "\n" + creatures.map((a: any) => {
+  const boss = !a.tier;
+  const sp = boss ? BOSS_SPEEDS[a.biome] ?? { land: 1, water: 0.6, mud: 0.8 } : speedsOf(a);
   const zones = [sp.land >= 0.8 && 0, sp.water >= 0.8 && 1, sp.mud >= 0.8 && 2].filter((z) => z !== false);
-  const [min, max] = CUSTOM.sizes[a.tier];
-  return `  ${a.slug}: { comfortZones: new j([${zones.join(", ")}]), ability1Duration: 1 / 0, ability1InputMode: \`hold\`, biome: ${tick(a.biome)}, biomes: [${tick(a.biome)}], minimumSize: ${min}, maximumSize: ${max}, terrainSpeedComfort: { land: ${sp.land}, water: ${sp.water}, mud: ${sp.mud} } },\n`;
+  const [min, max] = boss ? a.size : CUSTOM.sizes[a.tier];
+  return `  ${a.slug}: { comfortZones: new j([${zones.join(", ")}]), ability1Duration: 1 / 0, ability1InputMode: \`hold\`, biome: ${tick(a.biome)}, biomes: [${tick(a.biome)}], minimumSize: ${min}, maximumSize: ${max}, terrainSpeedComfort: { land: ${sp.land}, water: ${sp.water}, mud: ${sp.mud} }${boss ? ", showInUpgradeMenu: !1" : ""} },\n`;
 }).join(""));
 cbUpsert("var Ul = {\n", "Ul", "\n" + CUSTOM.foods.map((f: any) => `  ${f.slug}: { minimumTier: ${f.tiers[0]}, maximumTier: ${f.tiers[1]} },\n`).join(""));
-cbUpsert("  dp = e({\n", "dp", "\n" + CUSTOM.animals.map((a: any) => `    ${a.slug}: () => __cbAnimal(${tick(a.slug)}),\n`).join(""));
+cbUpsert("  dp = e({\n", "dp", "\n" + creatures.map((a: any) => `    ${a.slug}: () => __cbAnimal(${tick(a.slug)}),\n`).join(""));
 cbUpsert("  am = e({\n", "am", "\n" + CUSTOM.foods.map((f: any) => `    ${f.slug}: () => __cbFood(${tick(f.slug)}),\n`).join(""));
-cbUpsert("  vi = {\n", "vi", "\n" + CUSTOM.animals.map((a: any) =>
+cbUpsert("  vi = {\n", "vi", "\n" + creatures.map((a: any) =>
   `    ${a.slug}: { name: ${tick(a.name)}, ability1: ${tick(a.ability ?? "")}, description: ${tick(a.description ?? "")} },\n`).join(""));
 cbUpsert("    biomes: {\n      land: `#24B645`,\n", "colors", "\n" + biomeIds.map((id) => `      ${id}: ${tick(CUSTOM.biomes[id].color)},\n`).join(""));
 cbUpsert("    outline: {\n      land: `#09992F`,\n", "outline", "\n" + biomeIds.map((id) => `      ${id}: ${tick(CUSTOM.biomes[id].foodOutline)},\n`).join(""));

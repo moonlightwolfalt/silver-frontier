@@ -6,6 +6,7 @@
 //                           /new opens a private party (parties.js)
 //   /api/...                accounts, email/password login, shop, inventory (accounts.js)
 //   /api/servers            players per region, for the client's server list
+//   /api/changelog          every commit in the running version (the in-game changelog)
 //   /map-recorder           records the real mope.io map (bookmarklet) and uploads it
 //   /api/map                GET the map in use; POST a recording (owners); DELETE for generated
 //   /__health               health check for hosts (no password needed)
@@ -29,6 +30,7 @@ import { createAccounts } from "./accounts.js";
 import { createGate } from "./site-gate.js";
 import { createRecords } from "./records.js";
 import { recorderPage } from "./map-recorder.js";
+import { createChangelog } from "./changelog.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -146,6 +148,7 @@ async function loadItemIds() {
   }
 }
 
+const changelog = createChangelog({ root: ROOT }); // every deployed commit, for the in-game changelog
 let game = null; // set once the client is fetched: { accounts, server, map, decodeCapture, recorderInfo }
 
 const mapStatus = (map) => map && {
@@ -207,6 +210,7 @@ const server = http.createServer(async (req, res) => {
     catch (e) { return json(res, 500, { error: String(e.message) }); }
   }
   if (p === "/api/servers") return json(res, 200, game?.server.stats() ?? {});
+  if (p === "/api/changelog") return json(res, 200, await changelog());
   if (game && p === "/map-recorder") {
     res.writeHead(200, { "Content-Type": TYPES[".html"], "Cache-Control": "no-store" });
     return res.end(recorderPage(game.recorderInfo, mapStatus(game.map)));

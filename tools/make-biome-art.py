@@ -837,7 +837,7 @@ def main():
     if "--sheet" in args:
         sheet = args[args.index("--sheet") + 1]
     tiles = []
-    for a in DATA["animals"]:
+    for a in DATA["animals"] + DATA.get("bosses", []):
         if only and a["slug"] not in only:
             continue
         img = draw_animal(a)

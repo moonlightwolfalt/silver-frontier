@@ -75,7 +75,9 @@ function findPlayer(ctx, query) {
     all.find((p) => String(p.animal.id) === q) ??
     all.find((p) => p.name.toLowerCase() === q) ??
     all.find((p) => p.account?.email === q) ??
-    all.find((p) => p.name.toLowerCase().startsWith(q))
+    all.find((p) => p.name.toLowerCase().startsWith(q)) ??
+    all.find((p) => p.lobby === ctx.lobby && p.name.toLowerCase().includes(q)) ?? // "colossus" finds "👑 Sand Colossus"
+    all.find((p) => p.name.toLowerCase().includes(q))
   );
 }
 
@@ -196,15 +198,16 @@ function pos(ctx) {
     at("slingshot", sling, sling ? ` facing ${Math.round((sling.angle * 180) / Math.PI)}°` : ""));
 }
 
-function tp(ctx, [a, b]) {
+function tp(ctx, args) {
+  const [a, b] = args;
   const me = needAnimal(ctx);
-  if (b !== undefined) {
+  if (b !== undefined && Number.isFinite(Number(a)) && Number.isFinite(Number(b))) {
     moveAnimal(me, Number(a), Number(b));
     ctx.player.target = { x: me.x, y: me.y };
     return;
   }
-  const other = findPlayer(ctx, a);
-  if (!other) throw new Error(`no player "${a}"`);
+  const other = findPlayer(ctx, args.join(" "));
+  if (!other) throw new Error(`no player "${args.join(" ")}"`);
   if (other.lobby !== ctx.lobby) throw new Error(`${other.name} is in ${other.lobby.region.id}`);
   moveAnimal(me, other.animal.x, other.animal.y);
   ctx.player.target = { x: me.x, y: me.y };

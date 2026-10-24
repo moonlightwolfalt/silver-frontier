@@ -196,8 +196,9 @@ an allowed email before the site loads (free for up to 50 users).
   - **meteors:** a meteor shower of ten impacts. Each hurts animals nearby, leaves a lava
     crater for a few seconds and scatters treats.
   - **pumpkins:** a pumpkin rush of 12 rare pumpkins.
-  - **boss:** a tier 16 monster that takes a fifth of normal damage for 5 minutes. Eating it
-    pays 5× XP and 100 coins.
+  - **boss:** a monster of its own (Behemoth, Leviathan, Frost Wyrm or Sand Colossus, in
+    `custom-biomes.json` under `bosses`). It's in no upgrade menu or bestiary, fights as tier
+    17 and takes a fifth of normal damage for 5 minutes. Eating it pays 5× XP and 100 coins.
 - **Water and lava:** the bar drains slowly (faster while boosting or flying). Water animals
   refill in any water, lava animals in the volcano and lava pools, and every food tops it up a
   little (water, melons and kelp more). Running dry costs health.
@@ -222,6 +223,11 @@ an allowed email before the site loads (free for up to 50 users).
   aren't lethal (a timeout goes to the healthier animal), and the champion gets the prize and a
   **Tournament wins** board entry. `/tournament` shows the state and `/tournament cancel`
   stops it.
+- **Changelog:** the menu's Changelog box lists every commit in the version that's running,
+  newest first, with each commit's notes (`/api/changelog`). It reads the local git history,
+  or on hosts without one (Docker) asks GitHub for the deployed commit's history. The
+  repository comes from the host (`RENDER_GIT_REPO_SLUG`) or `CHANGELOG_REPO`, else
+  `package.json`.
 - **Giant cake:** walk onto it to climb its three layers. Each layer makes you 12% bigger and
   widens your view. Whoever has held the top layer longest is king of the cake and earns three
   foods' worth of XP every 5 s. The cake keeps putting out party food around it, up to 30 at a
@@ -349,6 +355,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `parties.js` | Party lobbies and invite codes |
 | `records.js` | Worldwide Most XP and Pumpkin goals boards (weekly, monthly, all time) |
 | `bots.js`, `events.js` | AI animals, and the world events |
+| `changelog.js` | The in-game changelog from the commit history |
 | `abilities.js` | Abilities, diving and tree climbing |
 | `modes.js`, `mode-list.js` | 1v1 arenas, ranked Elo, tournaments, Battle Royale, Teams, Sandbox |
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
