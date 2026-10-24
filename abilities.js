@@ -85,7 +85,9 @@ function hit(lobby, p, q, damage, now, effects = {}) {
 }
 
 function shove(q, from, dist) {
-  const b = q.animal, d = Math.hypot(b.x - from.x, b.y - from.y) || 1;
+  const b = q.animal;
+  if (!b) return; // the hit just before it was fatal
+  const d = Math.hypot(b.x - from.x, b.y - from.y) || 1;
   b.x += ((b.x - from.x) / d) * dist;
   b.y += ((b.y - from.y) / d) * dist;
 }

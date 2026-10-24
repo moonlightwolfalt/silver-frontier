@@ -18,7 +18,10 @@ import { REGIONS } from "./regions.js";
 import { generateWorld, generateLayerWorld, worldFromRecording, STYLED_FOODS } from "./world.js";
 import { CUSTOM, layerOfBiome } from "./custom-biomes.js";
 import { startAbility, stopAbility, startDiving, stopDiving, toggleClimb, abilityStep } from "./abilities.js";
+import { addBot, removeBot, botsStep } from "./bots.js";
+import { eventsStep } from "./events.js";
 import { modeTick, onSpawn, beforeLethal, onGone, arenaRequest, arenaResponse, pickTeam, TEAMS, MODE_BY_SLUG } from "./modes.js";
+export { addBot, removeBot };
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
@@ -48,7 +51,8 @@ export const PROTOCOL_VERSION = config.get("c").protocolVersion;
 export const ROLES = nr;
 for (const [i, xp] of TIER_XP.entries()) Lr[i].requiredXP = xp; // same table as the patched client
 export const game = { T, M, Lr, D, E };
-export { E, Lr };
+export { E, Lr, M, T, D, pm };
+export const getLayerOfBiome = layerOfBiome;
 export const getRecords = () => recordsRef;
 
 let accountsRef = null; // set by createGameServer, used for equipped skins
@@ -101,7 +105,7 @@ function writeInit(w, e) {
     case "animal":
       w.writeUint8(e.subspecies);
       w.writeUint8(e.tier);
-      w.writeUint16(0); // hole id
+      w.writeUint16(e.holeId ?? 0); // the hole it is hiding in
       w.writeString(e.name);
       w.writeString(e.skin ?? "");
       w.writeUint8((e.staff ? 1 : 0) | (e.nameColor != null ? 2 : 0) | (e.hasAccount ? 4 : 0));
@@ -146,7 +150,8 @@ function writeAnimalSync(w, a) {
   w.writeBoolean(true); // angle present
   w.writeBoolean(true); // health present
   w.writeBoolean(true); // size present
-  w.writeBoolean(false); // hole changed
+  const holeChanged = (a.holeId ?? 0) !== (a.sentHoleId ?? 0);
+  w.writeBoolean(holeChanged); // went into or came out of a hole
   if (a.tier >= 15) w.writeBoolean(true); // arena wins present
   const fx = a.fx ?? NO_FX;
   for (const k of ["diving", "healing", "burning", "frozen", "bleeding", "poisoned", "stunned"]) w.writeBoolean(!!fx[k]);
@@ -154,7 +159,8 @@ function writeAnimalSync(w, a) {
   if (fx.web) w.writeBits(0, 1); // web subspecies
   w.writeBoolean(!!fx.constricted);
   if (fx.constricted) w.writeBits(0, 3); // constrictor subspecies
-  for (let i = 0; i < 4; i++) w.writeBoolean(false); // shivering, sweating, aloed, under bush
+  for (let i = 0; i < 3; i++) w.writeBoolean(false); // shivering, sweating, aloed
+  w.writeBoolean(!!fx.underBush);
   w.writeBoolean(!!fx.ability1); // using its ability (the client plays the animal's own animation)
   w.writeBoolean(!!fx.lowResource); // low water/lava
   w.writeBoolean(!!a.flying); // flying (slingshot, flying abilities)
@@ -164,6 +170,9 @@ function writeAnimalSync(w, a) {
   w.writeBits(a.biomeHere, 3);
   if (fx.frozen) w.writeBits(1, 2); // frozen by a shot
   if (fx.bleeding) w.writeBoolean(false); // stink
+  if (holeChanged) w.writeBits(a.holeId ?? 0, 14);
+  if (a.holeId) w.writeBoolean(false); // seen in the hole (only by itself)
+  a.sentHoleId = a.holeId ?? 0;
   if (a.tier >= 15) w.writeUint8(Math.min(255, a.wins ?? 0)); // "(Wins: n)" under the name
   w.writeUint8(precision(a.angle, 2 * Math.PI, 8));
   w.writeUint8(Math.max(0, Math.min(100, Math.round(a.health ?? 100)))); // health
@@ -210,6 +219,14 @@ function segmentDistance(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
   const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// Picks a form by the client's rarity weights (index 0 is the normal one).
+function rollSubspecies(cfg) {
+  const weights = cfg?.subspeciesRarities ?? [1];
+  let r = Math.random() * weights.reduce((t, w) => t + w, 0);
+  for (let i = 0; i < weights.length; i++) if ((r -= weights[i]) < 0) return i;
+  return 0;
 }
 
 // ---------- combat ----------
@@ -439,6 +456,10 @@ export class Lobby {
     this.holes = entities.filter((e) => e.type === "hole");
     this.cakes = entities.filter((e) => e.type === "cake");
     this.lavaPools = entities.filter((e) => e.type === "puddle" && e.species === pm.LAVA);
+    this.rocks = entities.filter((e) => e.type === "rock");
+    this.bushes = entities.filter((e) => e.type === "bush");
+    this.stones = entities.filter((e) => e.type === "healing_stone");
+    this.flytraps = entities.filter((e) => e.type === "flytrap");
     this.slingshots = entities.filter((e) => e.type === "slingshot");
     this.terrainZones = entities
       .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
@@ -503,7 +524,7 @@ export class Lobby {
 
   // Portals: tunnel holes, the sky's top edge. True when the player has left this lobby.
   portalStep(p, now) {
-    if (now < (p.portalReadyAt ?? 0)) return false;
+    if (p.bot || now < (p.portalReadyAt ?? 0)) return false; // bots stay in their own world
     const a = p.animal;
     for (const h of this.holes)
       if (h.portal && Math.hypot(a.x - h.x, a.y - h.y) < h.size / 2) {
@@ -538,7 +559,65 @@ export class Lobby {
   }
 
   get playerCount() {
-    return [...this.players].filter((p) => p.animal).length;
+    return [...this.players].filter((p) => p.animal && !p.bot).length;
+  }
+
+  // ---------- helpers for bots and events ----------
+
+  animalName(slug) {
+    return NAMES[slug]?.name ?? slug;
+  }
+
+  clampToMap({ x, y }) {
+    return { x: Math.min(MAP.x - 40, Math.max(40, x)), y: Math.min(MAP.y - 40, Math.max(40, y)) };
+  }
+
+  // Where an animal of `slug` lives in this world, as a rectangle.
+  homeArea(slug) {
+    const biome = M[slug].biome;
+    const r = (b, pad = 150) => b && { x0: b.x - b.width / 2 + pad, x1: b.x + b.width / 2 - pad, y0: b.y - b.height / 2 + pad, y1: b.y + b.height / 2 - pad };
+    if (this.layer !== "surface") return { x0: 300, x1: MAP.x - 300, y0: 300, y1: MAP.y - 300 };
+    if (biome === "ocean") return r(Math.random() < 0.5 ? pg.biomes.leftOcean : pg.biomes.rightOcean);
+    return r(pg.biomes[biome]) ?? r(pg.biomes.land);
+  }
+
+  landArea() {
+    return this.homeArea("mouse");
+  }
+
+  // The nearest place an animal can refill its water (or lava).
+  nearestDrink(a) {
+    const lava = this.configOf(a).animalResource?.type === 1;
+    const spots = lava ? [this.volcano, ...this.lavaPools] : this.terrainZones.filter((e) => e.type !== "mud");
+    let best = null, bd = Infinity;
+    for (const e of spots) {
+      const d = Math.hypot(e.x - a.x, e.y - a.y);
+      if (d < bd) (bd = d), (best = { x: e.x, y: e.y });
+    }
+    if (!lava && this.layer === "surface") {
+      const sea = a.x < MAP.x / 2 ? pg.biomes.leftOcean : pg.biomes.rightOcean;
+      const d = Math.abs(a.x - sea.x) - sea.width / 2;
+      if (d < bd) best = { x: sea.x, y: Math.min(sea.y + sea.height / 2 - 100, Math.max(sea.y - sea.height / 2 + 100, a.y)) };
+    }
+    return best;
+  }
+
+  // The nearest food this animal may eat, within `range`.
+  nearestFood(a, range) {
+    let best = null, bd = range;
+    for (const e of this.entities.values()) {
+      if (e.type !== "food") continue;
+      const d = Math.hypot(e.x - a.x, e.y - a.y);
+      if (d >= bd) continue;
+      const r = FOOD_TIERS[D[e.species]];
+      if (r && (a.tier < r.minimumTier || a.tier > r.maximumTier)) continue;
+      (bd = d), (best = e);
+    }
+    return best;
+  }
+
+  pickTeamFor(p) {
+    pickTeam(this, p);
   }
 
   addEntity(e, announce = true) {
@@ -635,7 +714,7 @@ export class Lobby {
     if (stats)
       p.ws.send(encode("stopGameSession", {
         xp: Math.min(MAX_XP, p.xp), timeAlive: Math.round((Date.now() - (p.spawnedAt ?? Date.now())) / 1000), kills: p.kills ?? 0, wins: p.wins ?? 0,
-        coinsEarned: 0, cause: death?.cause ?? DEATH.ENVIRONMENT,
+        coinsEarned: p.coinsEarned ?? 0, cause: death?.cause ?? DEATH.ENVIRONMENT,
         killerName: killer ? death.killer.name || "Unnamed" : "", killerAnimal: killer?.species ?? 0, killerSubspecies: killer?.subspecies ?? 0,
         killerSkin: killer?.skin ?? "", via: 0, viaId: 0, castByName: "", castByAnimal: 0,
       }));
@@ -650,6 +729,8 @@ export class Lobby {
     if (!q) return true;
     if (!a || a === b || a.flying || a.fx?.hidden) return false;
     if (b.inTree && !this.configOf(a).canClimbTree) return false; // safe up a tree
+    if (b.holeId && b.holeId !== a.holeId) return false; // hiding in a hole
+    if (b.fx?.underBush && !this.configOf(a).canPassThroughBush) return false; // hiding under a bush
     if (!!a.fx?.diving !== !!b.fx?.diving) return false; // divers only meet divers
     if (this.mode === "SANDBOX") return false;
     if (this.mode === "TEAMS" && p.team && p.team === q.team) return false;
@@ -700,9 +781,11 @@ export class Lobby {
     if (!b) return;
     const a = q?.animal;
     if (a) {
-      const gain = Math.max(this.foodXP(a) * 5, Math.round(p.xp * 0.25));
+      const gain = Math.max(this.foodXP(a) * 5, Math.round(p.xp * 0.25)) * (p.boss ? 5 : 1);
+      if (p.boss) (this.giveCoins(q, 100, "boss"), this.serverMessage(q, "👑 You ate the boss!"));
       q.xp += gain;
       q.kills = (q.kills ?? 0) + 1;
+      this.giveCoins(q, 2 + b.tier, "kill");
       this.sendXP(q);
       this.checkProgress(q);
       this.serverMessage(q, `You ate ${p.name || "a player"}! +${gain.toLocaleString("en-US")} XP`);
@@ -750,6 +833,50 @@ export class Lobby {
     if (p.animal && fx.healing) a.health = Math.min(100, a.health + 10 * dt);
   }
 
+  // Holes hide small animals, bushes hide animals from the ones that can't get through them,
+  // rocks block animals that can't climb them, healing stones heal and flytraps snap at small
+  // animals.
+  terrainStep(p, now) {
+    const a = p.animal;
+    const cfg = this.configOf(a);
+    const fx = (a.fx ??= {});
+    const inside = (e, share = 0.5) => Math.hypot(a.x - e.x, a.y - e.y) < e.size * share;
+    if (a.holeId) {
+      const h = this.entities.get(a.holeId);
+      if (!h || !inside(h, 0.5) || a.flying) a.holeId = 0;
+    } else if (!a.flying && a.size <= 84)
+      for (const h of this.holes) if (!h.portal && a.size <= h.size * 1.5 && inside(h, 0.3)) { a.holeId = h.id; break; }
+    fx.underBush = !a.flying && this.bushes.some((b) => inside(b, 0.5));
+    if (!a.flying && !cfg.canClimbRock && !cfg.hoveringTerrain)
+      for (const r of this.rocks) {
+        const dx = a.x - r.x, dy = a.y - r.y, d = Math.hypot(dx, dy) || 1, min = r.size / 2 + a.size * 0.3;
+        if (d < min) (a.x = r.x + (dx / d) * min), (a.y = r.y + (dy / d) * min);
+      }
+    if (this.stones.some((st) => inside(st, 0.5))) a.healingUntil = Math.max(a.healingUntil ?? 0, now + 300);
+    if (a.tier <= 4 && !a.flying && now >= (a.trapReadyAt ?? 0) && this.flytraps.some((f) => inside(f, 0.5))) {
+      a.trapReadyAt = now + 3000;
+      a.stunnedUntil = now + 1500;
+      this.serverMessage(p, "A flytrap snapped at you!");
+      this.hurt(p, 10, null, now, DEATH.ENVIRONMENT);
+    }
+  }
+
+  // Everyone in this region's lobby and its layer worlds.
+  allHere() {
+    return [this, ...this.layers.values()].flatMap((l) => [...l.players]);
+  }
+
+  // MopeCoins: shown on the HUD for this life, and added to a signed-in player's balance.
+  giveCoins(p, n, why) {
+    if (!n || p.bot || this.mode === "SANDBOX") return;
+    p.coinsEarned = (p.coinsEarned ?? 0) + n;
+    p.ws.send(updateMessage([["coins", [encode("coins", { coins: p.coinsEarned })]]]));
+    if (p.account && accountsRef) {
+      const acc = accountsRef.get(p.account.id);
+      if (acc) accountsRef.setBalance(acc.id, "coins", (acc.wallet?.MOPECOINS ?? 0) + n);
+    }
+  }
+
   abilityName(a) {
     return NAMES[a.slug]?.ability1 ?? "";
   }
@@ -773,7 +900,7 @@ export class Lobby {
   sendXP(p) {
     p.xp = Math.min(MAX_XP, Math.max(0, Math.round(p.xp)));
     p.ws.send(updateMessage([["xp", [encode("xp", { xp: p.xp, rank: this.rankOf(p) })]]]));
-    if (p.animal && p.xp > 0 && this.mode !== "SANDBOX") recordsRef?.recordXP(p);
+    if (p.animal && p.xp > 0 && this.mode !== "SANDBOX" && !p.bot) recordsRef?.recordXP(p);
   }
 
   // Players in this lobby by XP, highest first.
@@ -808,9 +935,12 @@ export class Lobby {
     p.menuSandbox = sandbox;
     p.menuTier = Math.min(Lr.length, Math.max(1, tier));
     p.menu = Lr[p.menuTier - 1].animals.map((species) => T[species]);
+    // Earned menus roll each animal's rare forms by the client's own odds (subspeciesRarities);
+    // the card shows the rolled rarity. Sandbox menus always offer the normal form.
+    p.menuSubspecies = p.menu.map((slug) => (sandbox ? 0 : rollSubspecies(M[slug])));
     p.ws.send(encode("upgradeMenu", {
       animals: p.menu.map((slug) => T[slug]),
-      subspecies: p.menu.map(() => 0),
+      subspecies: p.menuSubspecies,
       equippedItemIds: p.menu.map((slug) => accountsRef?.equippedSkin(p.account, slug) ?? ""),
     }));
   }
@@ -930,7 +1060,16 @@ export class Lobby {
   // tier's requirement, so the XP bar and size match the animal; moving down keeps XP.
   switchAnimal(p, slug, subspecies = 0, sandbox = true) {
     const tier = Lr.findIndex((t) => t.animals.includes(T[slug])) + 1;
+    const before = p.animal?.tier ?? 0;
     p.xp = Math.max(p.xp, Lr[tier - 1].requiredXP);
+    if (!sandbox && tier > before) this.giveCoins(p, tier, "tier");
+    if (!sandbox && subspecies) {
+      const form = String(M[slug].subspeciesEnum?.[subspecies] ?? "").toLowerCase().split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+      const name = NAMES[slug]?.subspecies?.[form.toLowerCase().replace(/ /g, "_")] ?? `${form} ${NAMES[slug]?.name ?? slug}`;
+      for (const o of (this.base ?? this).allHere()) this.serverMessage(o, `✨ ${p.name || "Someone"} got a rare ${name}!`);
+      if (!p.bot) recordsRef?.addCount("rare_finds", p);
+      this.giveCoins(p, 25, "rare");
+    }
     this.spawn(p, slug, subspecies);
     p.autoFloor = sandbox ? this.earnedTier(p) : 0;
     this.checkProgress(p);
@@ -946,7 +1085,7 @@ export class Lobby {
 
   eat(p) {
     const a = p.animal;
-    if (a.flying || a.fx?.hidden || a.fx?.shell) return; // nothing to eat in the air, underground or in a shell
+    if (a.flying || a.fx?.hidden || a.fx?.shell || a.holeId) return; // nothing to eat in the air, underground, in a shell or a hole
     for (const e of this.entities.values()) {
       if (e.type === "pumpkin") {
         // Pumpkins aren't food: touching one pushes it so it rolls, boosting kicks it hard.
@@ -958,7 +1097,7 @@ export class Lobby {
       const range = FOOD_TIERS[D[e.species]]; // the client's own table of which tiers eat what
       if (range && (a.tier < range.minimumTier || a.tier > range.maximumTier)) continue;
       this.removeEntity(e.id);
-      p.xp += this.foodXP(a);
+      p.xp += this.foodXP(a) * (Date.now() < (this.xpBoostUntil ?? 0) ? 2 : 1); // double XP event
       a.resource = Math.min(100, (a.resource ?? 100) + (JUICY[D[e.species]] ?? 2) + (CUSTOM.biomes[this.configOf(a).biome] ? 4 : 0));
       this.sendXP(p);
       this.checkProgress(p);
@@ -1007,7 +1146,8 @@ export class Lobby {
     if (!p?.animal || !this.players.has(p)) return;
     const xp = pumpkinXP(e.subspecies, p.animal.tier, Lr.length);
     p.goals = (p.goals ?? 0) + 1;
-    const total = recordsRef?.addGoal(p) ?? p.goals;
+    this.giveCoins(p, 5, "goal");
+    const total = (!p.bot && recordsRef?.addGoal(p)) || p.goals;
     p.xp += xp;
     this.sendXP(p);
     this.checkProgress(p);
@@ -1088,8 +1228,10 @@ export class Lobby {
     const now = Date.now();
     if (this.ticks % 5 === 0) // keep loaded slingshots showing for players who just joined
       for (const sling of this.slingshots) if (sling.loaded) pumpkins.push(record((w) => writeSlingshot(w, sling, { loaded: sling.loaded.animal })));
+    botsStep(this, now);
     this.combatStep(now);
     modeTick(this, now, pumpkins);
+    eventsStep(this, now);
     const records = [];
     for (const p of this.players) {
       const a = p.animal;
@@ -1104,6 +1246,8 @@ export class Lobby {
       this.vitalsStep(p, dt, now);
       if (!p.animal) continue; // ran dry
       abilityStep(this, p, now, dt);
+      if (!p.animal) continue;
+      this.terrainStep(p, now);
       if (!p.animal) continue;
       this.cakeStep(p, now);
       // ease toward the size XP calls for, so growing and shrinking animate
@@ -1200,7 +1344,7 @@ export class Lobby {
     const a = p.animal;
     const sling = p.sling;
     if (!sling) {
-      if (now < (p.slingReadyAt ?? 0)) return;
+      if (p.bot || now < (p.slingReadyAt ?? 0)) return;
       for (const s of this.slingshots)
         if (!s.loaded && Math.hypot(a.x - s.x, a.y - s.y) < 45 + a.size * 0.15) {
           s.loaded = p;
@@ -1289,6 +1433,10 @@ export function createGameServer({ accounts, records = null, parties, map = null
   recordsRef = records;
   recordedMap = map;
   const lobbies = new Map(REGIONS.map((r) => [r.id, new Lobby(r)]));
+  const BOTS = Math.max(0, Number(process.env.BOTS ?? 8));
+  const botsFor = { FFA: BOTS, TEAMS: Math.ceil(BOTS * 0.75), BR: Math.ceil(BOTS / 2) };
+  const fillBots = (lobby) => { for (let i = 0; i < (botsFor[lobby.mode] ?? 0); i++) addBot(lobby); };
+  for (const l of lobbies.values()) fillBots(l);
   const wss = new WebSocketServer({
     noServer: true,
     handleProtocols: (protocols) => (protocols.has("mope.session") ? "mope.session" : false),
@@ -1301,7 +1449,11 @@ export function createGameServer({ accounts, records = null, parties, map = null
   function lobbyFor(regionId, mode = "FFA") {
     if (mode === "FFA") return lobbies.get(regionId);
     const key = `${regionId}:${mode}`;
-    if (!modeLobbies.has(key)) modeLobbies.set(key, new Lobby(REGIONS.find((r) => r.id === regionId), { mode }));
+    if (!modeLobbies.has(key)) {
+      const l = new Lobby(REGIONS.find((r) => r.id === regionId), { mode });
+      modeLobbies.set(key, l);
+      fillBots(l);
+    }
     return modeLobbies.get(key);
   }
 
@@ -1340,6 +1492,7 @@ export function createGameServer({ accounts, records = null, parties, map = null
         p.name = (msg.name || p.account?.displayName || "").slice(0, 32);
         p.xp = 0;
         p.kills = 0;
+        p.coinsEarned = 0;
         p.shownResource = null;
         p.autoFloor = 0;
         p.fixedSize = null;
@@ -1398,7 +1551,7 @@ export function createGameServer({ accounts, records = null, parties, map = null
         const slug = p.menu[msg.slot];
         p.menu = [];
         p.skinOverride = msg.skinOverride;
-        if (p.animal && slug) lobby.switchAnimal(p, slug, 0, p.menuSandbox);
+        if (p.animal && slug) lobby.switchAnimal(p, slug, p.menuSubspecies?.[msg.slot] ?? 0, p.menuSandbox);
         return;
       }
       case "chatMessage": {

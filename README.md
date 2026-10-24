@@ -174,6 +174,30 @@ an allowed email before the site loads (free for up to 50 users).
   The dive button lets water animals dive in water while oxygen lasts, and climbing animals
   climb trees with the climb button, safe from animals that can't climb. Cooldowns show on the
   buttons.
+- **Terrain:** small animals hide in holes, where bigger ones can't bite them, and pop out
+  when they leave. Bushes hide you from animals that can't get through them. Rocks block animals
+  that can't climb them, healing stones heal you while you stand on them, and flytraps snap at
+  tier 1-4 animals (a stun and a bite).
+- **Rare animals:** earned upgrade menus roll each animal's rare forms by the client's own odds,
+  so the card shows its rarity (a White Lion, a Dove, …). A rare pick is announced to the whole
+  region, pays 25 coins and counts on the **Rare animals found** board.
+- **Coins:** MopeCoins for kills (2 + the victim's tier), natural tier-ups (the tier), rares
+  (25), goals (5), casual and ranked 1v1 wins (10 and 20), Battle Royale wins (50), bosses
+  (100) and tournaments (200). They show on the HUD and the death screen, and go into a
+  signed-in account's balance for the shop.
+- **AI bots:** every region's FFA world has `BOTS` of them (default 8), Teams and Battle Royale
+  worlds a few. They eat, drink, run from predators, hunt prey, use abilities, upgrade,
+  respawn and accept most 1v1 requests. They show on the in-game leaderboard but never on the
+  worldwide boards or the server list's counts. `/bots <n>` changes the number for the world
+  you're in.
+- **World events** (each FFA world, every 6-10 minutes while people play; `/event <name>` starts
+  one):
+  - **double:** Double XP for 3 minutes.
+  - **meteors:** a meteor shower of ten impacts. Each hurts animals nearby, leaves a lava
+    crater for a few seconds and scatters treats.
+  - **pumpkins:** a pumpkin rush of 12 rare pumpkins.
+  - **boss:** a tier 16 monster that takes a fifth of normal damage for 5 minutes. Eating it
+    pays 5× XP and 100 coins.
 - **Water and lava:** the bar drains slowly (faster while boosting or flying). Water animals
   refill in any water, lava animals in the volcano and lava pools, and every food tops it up a
   little (water, melons and kelp more). Running dry costs health.
@@ -307,6 +331,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `/ban <player> [minutes]`, `/unban <email>` | trusted moderator |
 | `/announce <message>` | event team |
 | `/shoot [variant] [count]` fires pumpkins the way you face (they roll and stop, and vanish after a minute if they don't score; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole, cake and slingshot), `/face <degrees>`, `/layer <surface|underground|sky|space>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
+| `/bots <n>`, `/event <double|meteors|pumpkins|boss>` | admin |
 | `/coins <n> [email]`, `/gems <n> [email]`, `/role <email> <0-5>` | developer |
 
 ## Files
@@ -323,6 +348,8 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `custom-biomes.json`, `custom-biomes.js`, `tools/make-biome-art.py` | Swamp, underground, sky and space: their animals, foods, colours, and the sprite generator |
 | `parties.js` | Party lobbies and invite codes |
 | `records.js` | Worldwide Most XP and Pumpkin goals boards (weekly, monthly, all time) |
+| `bots.js`, `events.js` | AI animals, and the world events |
+| `abilities.js` | Abilities, diving and tree climbing |
 | `modes.js`, `mode-list.js` | 1v1 arenas, ranked Elo, tournaments, Battle Royale, Teams, Sandbox |
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
 | `dev-commands.js` | Chat commands and the client's staff tools |

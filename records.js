@@ -12,6 +12,7 @@ export const STATS = [
   { key: "ranked_rating", label: "Ranked 1v1 rating", unit: "count", board: true },
   { key: "tournament_wins", label: "Tournament wins", unit: "count", board: true },
   { key: "br_wins", label: "Battle Royale wins", unit: "count", board: true },
+  { key: "rare_finds", label: "Rare animals found", unit: "count", board: true },
 ];
 export const START_RATING = 1000;
 

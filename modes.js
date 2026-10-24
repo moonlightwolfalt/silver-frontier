@@ -107,6 +107,7 @@ export class Arena {
       if (winner.animal) winner.animal.wins = winner.wins;
       const bonus = this.kind === "casual" && winner.animal ? this.lobby.foodXP(winner.animal) * 5 : 0;
       if (bonus) (winner.xp += bonus), this.lobby.sendXP(winner);
+      this.lobby.giveCoins(winner, this.kind === "ranked" ? 20 : this.kind === "casual" ? 10 : 0, "1v1");
       e.message = bonus ? `BONUS${bonus}` : `${winner.name || "Winner"} wins!`;
     } else e.message = "Draw!";
     for (const p of [this.p1, this.p2]) {
@@ -139,6 +140,7 @@ export function arenaRequest(lobby, p, targetId) {
   q.ws.send(updateMessage([["arenaRequest", [encode("arenaRequest", { id: p.animal.id, xp: Math.min(2 ** 32 - 1, p.xp) })]]]));
   cooldown(p, ARENA_SLOT, 10_000);
   lobby.serverMessage(p, `1v1 request sent to ${q.name || "them"}.`);
+  if (q.bot) setTimeout(() => lobby.timer && arenaResponse(lobby, q, !q.boss && Math.random() < 0.7), 1500); // bots usually accept
 }
 
 export function arenaResponse(lobby, q, accepted) {
@@ -181,7 +183,7 @@ function rankedResult(lobby, p1, p2, winner) {
   const d = Math.round(K * (score1 - expected1));
   for (const [p, before, delta] of [[p1, r1, d], [p2, r2, -d]]) {
     const after = Math.max(0, before + delta);
-    records?.setRating(p, after);
+    if (!p.bot) records?.setRating(p, after);
     p.rankedReadyAt = Date.now() + 3000;
     if (lobby.players.has(p))
       lobby.serverMessage(p, `${winner === p ? "Victory!" : winner ? "Defeat." : "Draw."} Rating ${after} (${delta >= 0 ? "+" : ""}${delta}) · ${rankOf(after)}`);
@@ -224,7 +226,8 @@ function tournamentDone(lobby, champion) {
   champion.xp += t.prize;
   lobby.sendXP(champion);
   lobby.checkProgress(champion);
-  getRecords()?.addCount("tournament_wins", champion);
+  if (!champion.bot) getRecords()?.addCount("tournament_wins", champion);
+  lobby.giveCoins(champion, 200, "tournament");
   tell(lobby, `🏆 ${champion.name || "Someone"} won the tournament!${t.prize ? ` +${fmt(t.prize)} XP` : ""}`);
 }
 
@@ -331,7 +334,8 @@ function brStep(lobby, now, out) {
       out.push(record((w) => writeArenaSync(w, z)));
       if (winner) {
         winner.wins = (winner.wins ?? 0) + 1;
-        getRecords()?.addCount("br_wins", winner);
+        if (!winner.bot) getRecords()?.addCount("br_wins", winner);
+        lobby.giveCoins(winner, 50, "br");
         winner.xp += lobby.foodXP(winner.animal) * 20;
         lobby.sendXP(winner);
       }

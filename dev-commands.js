@@ -11,6 +11,8 @@
 import { PUMPKINS, pickPumpkin } from "./pumpkins.js";
 import { MAX_XP } from "./limits.js";
 import { tournamentCommand, tournamentJoin, teamCommand, rankOf, arenaRequest } from "./modes.js";
+import { addBot, removeBot } from "./bots.js";
+import { startEvent, EVENT_NAMES } from "./events.js";
 
 const COMMANDS = {
   help: { role: 0, usage: "/help", run: help },
@@ -30,6 +32,8 @@ const COMMANDS = {
   team: { role: 0, usage: "/team  (your team and the team scores)", run: teamCommand },
   "1v1": { role: 0, usage: "/1v1 <player>  (send a 1v1 request; tier 15+)", run: duel },
   rank: { role: 0, usage: "/rank  (your ranked 1v1 rating)", run: rank },
+  bots: { role: 4, usage: "/bots <n>  (how many AI animals this world has)", run: bots },
+  event: { role: 4, usage: "/event <double|meteors|pumpkins|boss>  (start a world event)", run: event },
   layer: { role: 4, usage: "/layer <surface|underground|sky|space>  (go to another layer world)", run: layer },
   pos: { role: 1, usage: "/pos  (your position, and the nearest hole, cake and slingshot)", run: pos },
   bring: { role: 4, usage: "/bring <player>", run: bring },
@@ -159,6 +163,21 @@ function duel(ctx, [name]) {
 function rank(ctx) {
   const r = ctx.records?.rating(ctx.player) ?? 1000;
   reply(ctx, `Ranked 1v1 rating: ${r} · ${rankOf(r)}`);
+}
+
+function bots(ctx, [n]) {
+  const want = Math.max(0, Math.min(40, Number(n)));
+  if (!Number.isFinite(want)) throw new Error("usage: /bots <n>");
+  const lobby = ctx.lobby;
+  const mine = [...lobby.players].filter((p) => p.bot && !p.boss);
+  for (let i = mine.length; i < want; i++) addBot(lobby);
+  for (const p of mine.slice(want)) removeBot(lobby, p);
+  reply(ctx, `This world now has ${want} bots.`);
+}
+
+function event(ctx, [name]) {
+  if (!EVENT_NAMES.includes(name)) throw new Error(`events: ${EVENT_NAMES.join(", ")}`);
+  startEvent(ctx.lobby.base ?? ctx.lobby, name);
 }
 
 function layer(ctx, [name]) {
