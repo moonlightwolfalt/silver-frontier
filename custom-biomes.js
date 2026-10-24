@@ -22,3 +22,8 @@ export const layerBiomes = (map) => ({
 
 export const customAnimal = (slug) => CUSTOM.animals.find((a) => a.slug === slug);
 export const customFood = (slug) => CUSTOM.foods.find((f) => f.slug === slug);
+
+// Shop skins: every animal redrawn in each "skins" palette (tools/make-biome-art.py), sold for coins.
+export const CUSTOM_SKINS = CUSTOM.animals.flatMap((a) =>
+  (CUSTOM.skins ?? []).map((s) => ({ id: `${a.slug}_${s.key}`, animal: a.slug, rarity: s.rarity, name: `${s.name} ${a.name}` })),
+);

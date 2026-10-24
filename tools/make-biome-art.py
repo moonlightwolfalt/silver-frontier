@@ -9,8 +9,9 @@ Each animal is built from a body plan (fish, bird, mammal, dragon, ...) plus a f
 the 68 animals share one look. Everything is drawn 4x larger and scaled down for smooth edges.
 
 Usage: python3 tools/make-biome-art.py [--only slug,slug] [--sheet out.png]
-Writes custom-assets/animals/<biome>/<slug>/{body,<slug>.ui}.webp and
-custom-assets/foods/<slug>/{<slug>,edible}.webp.
+Writes custom-assets/animals/<biome>/<slug>/{body,<slug>.ui}.webp,
+custom-assets/foods/<slug>/{<slug>,edible}.webp, and the shop skins (each animal redrawn in each
+"skins" palette) as custom-assets/items/<slug>_<skin>/{body,<slug>.ui}.webp.
 """
 import json
 import math
@@ -660,9 +661,9 @@ PLANS = {
 }
 
 
-def draw_animal(a):
+def draw_animal(a, palette=None):
     p = Pen()
-    colors = [hexc(x) for x in a["colors"]]
+    colors = [hexc(x) for x in palette or a["colors"]]
     PLANS[a["plan"]](p, colors, a.get("features", []))
     return p.img.resize((500, 500), Image.LANCZOS)
 
@@ -845,6 +846,16 @@ def main():
         save(img, d / "body.webp")
         save(img, d / f"{a['slug']}.ui.webp")
         tiles.append((a["slug"], img))
+    for a in DATA["animals"]:
+        for skin in DATA.get("skins", []):
+            item = f"{a['slug']}_{skin['key']}"
+            if only and a["slug"] not in only and item not in only:
+                continue
+            img = draw_animal(a, skin["colors"])
+            d = OUT / "items" / item
+            save(img, d / "body.webp")
+            save(img, d / f"{a['slug']}.ui.webp")
+            tiles.append((item, img))
     for f in DATA["foods"]:
         if only and f["slug"] not in only:
             continue

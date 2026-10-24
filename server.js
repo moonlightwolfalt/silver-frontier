@@ -33,7 +33,7 @@ import { recorderPage } from "./map-recorder.js";
 import { createChangelog } from "./changelog.js";
 import { createStore } from "./store.js";
 import { createProgress, CUSTOM_ACHIEVEMENTS } from "./progress.js";
-import { CUSTOM as CUSTOM_BIOMES } from "./custom-biomes.js";
+import { CUSTOM as CUSTOM_BIOMES, CUSTOM_SKINS } from "./custom-biomes.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -126,6 +126,18 @@ async function serveCached(res, cacheRoot, rel, upstream) {
   } catch {}
   res.writeHead(404);
   res.end("not found");
+}
+
+// A text file from mope.io's servers: the local copy, else fetched and kept.
+async function cachedText(file, upstream) {
+  const local = generatedFile(upstream);
+  for (const f of [local, file].filter(Boolean)) try { return await fs.promises.readFile(f, "utf8"); } catch {}
+  const up = await fetch(upstream);
+  if (!up.ok) throw new Error(`${upstream}: ${up.status}`);
+  const text = await up.text();
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  await fs.promises.writeFile(file, text);
+  return text;
 }
 
 const PAGE = `<!doctype html><meta charset=utf-8><title>Mope assets</title>
@@ -234,6 +246,19 @@ const server = http.createServer(async (req, res) => {
     if (!file.startsWith(ASSETS + path.sep)) { res.writeHead(403); return res.end(); }
     return fs.readFile(file, (err, data) => (err ? (res.writeHead(404), res.end("not found")) : send(res, file, data)));
   }
+  if (p.startsWith("/s3/mope-prod/items/")) {
+    // The custom animals' skins (custom-assets/items/<id>/).
+    const file = path.normalize(path.join(CUSTOM, p.slice("/s3/mope-prod/".length)));
+    if (file.startsWith(path.join(CUSTOM, "items") + path.sep) && fs.existsSync(file)) return send(res, file, fs.readFileSync(file));
+  }
+  const itemNames = p.match(/^\/s3\/mope-prod\/translations\/items\/([\w-]+)\.json$/);
+  if (itemNames) {
+    // mope.io's skin names plus ours (in English for every language).
+    let names = {};
+    try { names = JSON.parse(await cachedText(path.join(DUMP, "s3.mope.io", p.slice("/s3/".length)), `https://s3.mope.io/${p.slice("/s3/".length)}`)); } catch {}
+    for (const s of CUSTOM_SKINS) names[s.id] ??= { displayName: s.name };
+    return send(res, "items.json", JSON.stringify(names));
+  }
   if (p.startsWith("/s3/")) {
     const source = `https://s3.mope.io/${p.slice("/s3/".length)}`;
     const local = generatedFile(source);
@@ -273,6 +298,7 @@ server.listen(PORT, async () => {
     store,
     dataDir: DATA,
     itemIds: await loadItemIds(),
+    extraItems: CUSTOM_SKINS,
     animalSlugs: Object.keys(data.M),
   });
   // Achievements (the client's list, without ours that the patch added to it) and quests.

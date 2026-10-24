@@ -20,7 +20,7 @@ const SESSION_DAYS = 30;
 const ROLE = { USER: 0, MODERATOR: 1, TRUSTED_MODERATOR: 2, EVENT_TEAM: 3, ADMIN: 4, DEVELOPER: 5 };
 const RARITIES = ["common", "uncommon", "rare", "epic", "legendary", "mythic"];
 
-export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = [], animalSlugs = [], records = null }) {
+export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = [], extraItems = [], animalSlugs = [], records = null }) {
   fs.mkdirSync(dataDir, { recursive: true });
   const configFile = path.join(dataDir, "config.json");
   const db = store.get("accounts") ?? { accounts: {}, sessions: {} };
@@ -47,7 +47,9 @@ export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = 
       const price = gems ? 50 + 50 * RARITIES.indexOf(rarity) : 500 + 750 * RARITIES.indexOf(rarity);
       return { id, animal, rarity, currency: gems ? "GEMS" : "MOPECOINS", price };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    // This server's own skins (the custom animals'): a fixed rarity, always for coins.
+    .concat(extraItems.map(({ id, animal, rarity }) => ({ id, animal, rarity, currency: "MOPECOINS", price: 500 + 750 * RARITIES.indexOf(rarity), custom: true })));
   const itemById = new Map(ITEMS.map((i) => [i.id, i]));
 
   // ---------- accounts ----------
@@ -186,6 +188,9 @@ export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = 
     const shelves = [];
     const featured = ITEMS.filter((i) => ["legendary", "mythic"].includes(i.rarity)).slice(0, 12);
     shelves.push({ key: "featured", title: "Featured", sortOrder: 0, layout: "CAROUSEL", kind: "CURATED", products: featured.map((i) => product(acc, i)) });
+    const custom = ITEMS.filter((i) => i.custom);
+    if (custom.length)
+      shelves.push({ key: "new_worlds", title: "New worlds", sortOrder: 0, layout: "GRID", kind: "CURATED", products: custom.map((i) => product(acc, i)) });
     RARITIES.slice().reverse().forEach((r, n) =>
       shelves.push({ key: `rarity_${r}`, title: r[0].toUpperCase() + r.slice(1), sortOrder: n + 1, layout: "GRID", kind: "STANDARD",
         products: ITEMS.filter((i) => i.rarity === r).map((i) => product(acc, i)) }),

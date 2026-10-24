@@ -1831,5 +1831,40 @@
       "ability": "Stomp!",
       "description": "A walking dune with a temper."
     }
+  ],
+  "skins": [
+    {
+      "key": "golden",
+      "name": "Golden",
+      "rarity": "legendary",
+      "colors": [
+        "#7a4d06",
+        "#b07a10",
+        "#e3b42a",
+        "#ffe27a"
+      ]
+    },
+    {
+      "key": "shadow",
+      "name": "Shadow",
+      "rarity": "epic",
+      "colors": [
+        "#160f24",
+        "#2b1f45",
+        "#4a3570",
+        "#7a5fb0"
+      ]
+    },
+    {
+      "key": "frost",
+      "name": "Frost",
+      "rarity": "rare",
+      "colors": [
+        "#2a5f82",
+        "#4f93bd",
+        "#8fd0ef",
+        "#dff6ff"
+      ]
+    }
   ]
 }

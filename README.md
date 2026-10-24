@@ -354,6 +354,12 @@ Press **Log in** and pick any provider. A sign-in page opens where you can log i
 with email and password. Accounts, coins, gems, owned skins and equipped skins are stored in
 `data/accounts.json`.
 
+**Skins for the new animals:** the shop's **New worlds** tab sells 204 skins, a **Golden**
+(legendary, 3,500 coins), **Shadow** (epic, 2,750) and **Frost** (rare, 2,000) version of each
+swamp, underground, sky and space animal. Equip one like any mope.io skin. The art comes from
+`tools/make-biome-art.py` (palettes in the `skins` list of `custom-biomes.json`) and lives in
+`custom-assets/items/`.
+
 **Owner accounts** get the DEVELOPER role, 999,999,999 MopeCoins and gems, and every shop item.
 List them in `data/config.json` (see `config.example.json`) or in
 `OWNER_EMAILS=a@b.c,d@e.f`. `data/` is gitignored, so owner emails and passwords stay out of
