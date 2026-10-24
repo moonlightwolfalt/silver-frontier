@@ -3,8 +3,7 @@
 // the client's menu Leaderboard through the stats board API (accounts.js).
 //
 // Players are identified by their account when signed in, otherwise by the name they played as.
-import fs from "node:fs";
-import path from "node:path";
+import { fileStore } from "./store.js";
 
 export const STATS = [
   { key: "most_xp", label: "Most XP", unit: "xp", board: true },
@@ -31,21 +30,11 @@ const bucketKeys = (d = new Date()) => ({
 });
 const normPeriod = (p) => (p === "all-time" || p === "alltime" || !p ? "alltime" : p);
 
-export function createRecords({ dataDir }) {
-  fs.mkdirSync(dataDir, { recursive: true });
-  const file = path.join(dataDir, "records.json");
-  let db = { people: {}, boards: {} }; // boards[stat][bucket][personId] = value
-  try { db = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+export function createRecords({ dataDir, store = fileStore(dataDir) }) {
+  const db = store.get("records") ?? { people: {}, boards: {} }; // boards[stat][bucket][personId] = value
   db.ratings ??= {}; // personId -> current ranked 1v1 rating
 
-  let timer = null;
-  const save = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      fs.writeFileSync(file + ".tmp", JSON.stringify(db));
-      fs.renameSync(file + ".tmp", file);
-    }, 2000);
-  };
+  const save = () => store.set("records", db, 2000);
 
   const person = (p) => {
     const id = p.account ? `acc:${p.account.id}` : `guest:${(p.name || "unnamed").toLowerCase()}`;

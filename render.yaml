@@ -1,5 +1,6 @@
 # Render Blueprint: free web service built from the Dockerfile.
-# The free plan has no persistent disk, so accounts reset whenever the service restarts, and it
+# The free plan has no persistent disk: set DATABASE_URL to a free Postgres database or accounts
+# reset whenever the service restarts. It
 # sleeps after 15 minutes without visitors (the next visit wakes it in about a minute).
 services:
   - type: web
@@ -11,6 +12,8 @@ services:
       - key: SITE_PASSWORD
         sync: false # Render asks for it when you create the service
       - key: OWNER_EMAILS
+        sync: false
+      - key: DATABASE_URL # optional: a Postgres URL (Neon, Supabase…) so accounts survive redeploys
         sync: false
       - key: DOWNLOAD_ASSETS
         value: "0"

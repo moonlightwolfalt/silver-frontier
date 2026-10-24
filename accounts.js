@@ -12,6 +12,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileStore } from "./store.js";
 
 const COOKIE = "mope_session";
 const UNLIMITED = 999_999_999;
@@ -19,26 +20,17 @@ const SESSION_DAYS = 30;
 const ROLE = { USER: 0, MODERATOR: 1, TRUSTED_MODERATOR: 2, EVENT_TEAM: 3, ADMIN: 4, DEVELOPER: 5 };
 const RARITIES = ["common", "uncommon", "rare", "epic", "legendary", "mythic"];
 
-export function createAccounts({ dataDir, itemIds = [], animalSlugs = [], records = null }) {
+export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = [], animalSlugs = [], records = null }) {
   fs.mkdirSync(dataDir, { recursive: true });
-  const dbFile = path.join(dataDir, "accounts.json");
   const configFile = path.join(dataDir, "config.json");
-  let db = { accounts: {}, sessions: {} };
-  try { db = JSON.parse(fs.readFileSync(dbFile, "utf8")); } catch {}
+  const db = store.get("accounts") ?? { accounts: {}, sessions: {} };
   let config = { owners: [] };
   try { config = { ...config, ...JSON.parse(fs.readFileSync(configFile, "utf8")) }; } catch {}
   const owners = new Set(
     [...config.owners, ...(process.env.OWNER_EMAILS ?? "").split(",")].map((e) => e.trim().toLowerCase()).filter(Boolean),
   );
 
-  let saveTimer = null;
-  const save = () => {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      fs.writeFileSync(dbFile + ".tmp", JSON.stringify(db, null, 2));
-      fs.renameSync(dbFile + ".tmp", dbFile);
-    }, 100);
-  };
+  const save = () => store.set("accounts", db, 100);
 
   // ---------- items (shop skins) ----------
 

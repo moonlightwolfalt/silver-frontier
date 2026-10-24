@@ -24,6 +24,19 @@ to wake it. It also has no persistent disk, so accounts reset when it restarts. 
 their perks back as soon as they register again. Assets aren't pre-downloaded there; each file
 is fetched from mope.io the first time it's needed.
 
+
+### Keeping accounts on Render: a free database
+
+Render's free plan has no disk, so `data/` (accounts, coins, ratings, boards, the recorded map)
+is wiped on every redeploy. A free Postgres database fixes that:
+
+1. Make a free database at [neon.tech](https://neon.tech) (or Supabase) and copy its connection
+   string (`postgresql://…`).
+2. In Render, open the service, then **Environment**, and add `DATABASE_URL` with that string.
+   Then **Save Changes**.
+
+On the next start the log says `data: Postgres`. Everything is kept in one table
+(`silver_frontier`), and any existing data files are copied in the first time.
 ## Running in GitHub Codespaces (works from a phone)
 
 1. On github.com, open this repository and tap **Code → Codespaces → Create codespace on
@@ -58,8 +71,8 @@ Keep the service at **one replica**: each region's world lives in that server's 
 first start it downloads the asset catalog into `/data/assets` (about 10 minutes). The game is
 playable meanwhile, because missing files are fetched from mope.io as needed.
 
-Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATA_DIR` (accounts, default
-`./data`), `ASSETS_DIR` (default `./assets`), `DOWNLOAD_ASSETS=0` (skip the asset download at
+Settings for any host: `PORT`, `SITE_PASSWORD`, `OWNER_EMAILS`, `DATABASE_URL` (Postgres for
+accounts and records instead of files), `DATA_DIR` (accounts, default `./data`), `ASSETS_DIR` (default `./assets`), `DOWNLOAD_ASSETS=0` (skip the asset download at
 startup), `MAP_FILE` (recorded map, default `data/map.json`). `/__health` answers without the password and shows the running commit (`ok 1a2b3c4`),
 so you can check a deploy is up to date. The page and scripts are sent with
 `Cache-Control: no-store`, so a redeploy reaches players on their next visit.
@@ -358,6 +371,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `changelog.js` | The in-game changelog from the commit history |
 | `abilities.js` | Abilities, diving and tree climbing |
 | `modes.js`, `mode-list.js` | 1v1 arenas, ranked Elo, tournaments, Battle Royale, Teams, Sandbox |
+| `store.js` | Saving data: JSON files, or Postgres with `DATABASE_URL` |
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
 | `dev-commands.js` | Chat commands and the client's staff tools |
 | `regions.js` | The region list |

@@ -31,6 +31,7 @@ import { createGate } from "./site-gate.js";
 import { createRecords } from "./records.js";
 import { recorderPage } from "./map-recorder.js";
 import { createChangelog } from "./changelog.js";
+import { createStore } from "./store.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -165,6 +166,7 @@ async function handleMap(req, res) {
   if (!acc || acc.role < game.accounts.ROLE.DEVELOPER) return json(res, 403, { error: "sign in with an owner account first" });
   if (req.method === "DELETE") {
     fs.rmSync(MAP_FILE, { force: true });
+    game.store.delete("map");
     game.map = null;
     game.server.setMap(null);
     return json(res, 200, { message: "Back to the generated map in every region." });
@@ -178,8 +180,7 @@ async function handleMap(req, res) {
   } catch (e) {
     return json(res, 400, { error: e.message });
   }
-  fs.mkdirSync(path.dirname(MAP_FILE), { recursive: true });
-  fs.writeFileSync(MAP_FILE, JSON.stringify(map));
+  game.store.set("map", map, 0);
   game.map = map;
   game.server.setMap(map);
   const s = mapStatus(map);
@@ -260,17 +261,20 @@ server.listen(PORT, async () => {
   console.log(`http://localhost:${PORT}${gate ? " (password protected)" : ""} · version ${VERSION}`);
   if (!fs.existsSync(path.join(SITE, "index.html"))) return console.log("client not fetched yet; run: bun run setup");
   const [{ createGameServer, game: data, decodeCapture, recorderInfo }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
-  let map = null;
-  try { map = JSON.parse(fs.readFileSync(MAP_FILE, "utf8")); console.log(`using the recorded map in ${MAP_FILE}`); } catch {}
-  const records = createRecords({ dataDir: DATA });
+  const store = await createStore({ dataDir: DATA }); // files, or Postgres with DATABASE_URL
+  let map = store.get("map");
+  if (!map) try { map = JSON.parse(fs.readFileSync(MAP_FILE, "utf8")); } catch {}
+  if (map) console.log("using the recorded map");
+  const records = createRecords({ dataDir: DATA, store });
   const accounts = createAccounts({
     records,
+    store,
     dataDir: DATA,
     itemIds: await loadItemIds(),
     animalSlugs: Object.keys(data.M),
   });
   game = {
-    accounts, map, decodeCapture, recorderInfo: recorderInfo(),
+    store, accounts, map, decodeCapture, recorderInfo: recorderInfo(),
     server: createGameServer({ accounts, records, parties: createParties(), map }),
   };
   // DOWNLOAD_ASSETS=0 skips the up-front download (hosts without a persistent disk); files are
