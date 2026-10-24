@@ -24,6 +24,7 @@ const COMMANDS = {
   god: { role: 4, usage: "/god  (toggle)", run: god },
   tp: { role: 4, usage: "/tp <x> <y> | /tp <player>", run: tp },
   face: { role: 4, usage: "/face <degrees>  (0 = right, 90 = down; aims /shoot)", run: face },
+  layer: { role: 4, usage: "/layer <surface|underground|sky|space>  (go to another layer world)", run: layer },
   pos: { role: 1, usage: "/pos  (your position, and the nearest hole, cake and slingshot)", run: pos },
   bring: { role: 4, usage: "/bring <player>", run: bring },
   spawn: { role: 4, usage: "/spawn <food> [count]", run: spawnFood },
@@ -141,6 +142,13 @@ function face(ctx, [deg]) {
   a.angle = ((((Number(deg) || 0) % 360) + 360) % 360) * (Math.PI / 180);
   a.vx = a.vy = 0;
   ctx.player.target = { x: a.x, y: a.y };
+}
+
+function layer(ctx, [name]) {
+  const a = needAnimal(ctx);
+  const names = ["surface", "underground", "sky", "space"];
+  if (!names.includes(name)) throw new Error(`layers: ${names.join(", ")}`);
+  ctx.lobby.transfer(ctx.player, name, { at: { x: a.x, y: a.y } });
 }
 
 function pos(ctx) {

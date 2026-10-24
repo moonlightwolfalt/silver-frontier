@@ -127,6 +127,25 @@ an allowed email before the site loads (free for up to 50 users).
   tiers in the client's own table (berries up to tier 8, watermelons from tier 11, and so on).
   Eaten food comes back after a few seconds. To play on mope.io's real map instead, record it (see
   [The real mope.io map](#the-real-mopeio-map)).
+- **Custom biomes:** four biomes mope.io doesn't have, each with a full tier 1–17 animal ladder
+  (68 new animals) and 7 foods of its own, drawn in mope.io's style:
+  - **Swamp:** a murky area in the south-east of the land biome, with mud, puddles and ponds.
+    From Tadpole and Dragonfly up to Anaconda, Bog Troll, Swamp Monster and the three-headed
+    Hydra.
+  - **Underground:** a cave world. Enter through the big tunnel holes, two in each surface
+    biome. Earthworm and Cave Cricket up to Crystal Golem, Magma Worm and Earth Titan.
+  - **Sky:** cloud world. A slingshot pulled back nearly all the way flings you into it, and
+    gaps in the clouds drop you back down. Butterfly and Hummingbird up to Griffin, Pegasus, Sky
+    Whale and Storm Dragon.
+  - **Space:** fly off the top edge of the sky. Wormholes take you back to the sky. Star Mite
+    and Moon Moth up to Cosmic Whale, Solar Phoenix and Galaxy Dragon.
+
+  The new animals show up in the upgrade menus next to the classic ones. Picking one takes you
+  to its world, and picking a surface animal brings you back. Every region (and party) has its
+  own underground, sky and space. `/layer <name>` jumps between them. Everything comes from
+  `custom-biomes.json`. `patch-client.ts` adds it to the client, and
+  `python3 tools/make-biome-art.py` redraws the sprites into `custom-assets/` after you change
+  it.
 - **Giant cake:** walk onto it to climb its three layers. Each layer makes you 12% bigger and
   widens your view. Whoever has held the top layer longest is king of the cake and earns three
   foods' worth of XP every 5 s. The cake keeps putting out party food around it, up to 30 at a
@@ -235,7 +254,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `/players`, `/kick <player>` | moderator |
 | `/ban <player> [minutes]`, `/unban <email>` | trusted moderator |
 | `/announce <message>` | event team |
-| `/shoot [variant] [count]` fires pumpkins the way you face (they roll and stop, and vanish after a minute if they don't score; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole, cake and slingshot), `/face <degrees>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
+| `/shoot [variant] [count]` fires pumpkins the way you face (they roll and stop, and vanish after a minute if they don't score; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole, cake and slingshot), `/face <degrees>`, `/layer <surface|underground|sky|space>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
 | `/coins <n> [email]`, `/gems <n> [email]`, `/role <email> <0-5>` | developer |
 
 ## Files
@@ -249,6 +268,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `world.js` | Generates each lobby's terrain and foods, or loads a recorded map |
 | `map-recorder.js` | The /map-recorder page and the bookmarklet that records mope.io's map |
 | `pumpkins.js`, `tools/make-pumpkins.py`, `custom-assets/` | Pumpkin variants, their chances and XP, and the custom textures |
+| `custom-biomes.json`, `custom-biomes.js`, `tools/make-biome-art.py` | Swamp, underground, sky and space: their animals, foods, colours, and the sprite generator |
 | `parties.js` | Party lobbies and invite codes |
 | `records.js` | Worldwide Most XP and Pumpkin goals boards (weekly, monthly, all time) |
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |

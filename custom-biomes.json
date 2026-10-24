@@ -1,0 +1,133 @@
+{
+  "_about": "Custom biomes for silver-frontier: swamp (an area of the surface map), underground, sky and space (layer worlds reached through portals). Read by custom-biomes.js (server and client patch) and tools/make-biome-art.py (sprites). Colours are [dark, main, light, accent].",
+  "biomes": {
+    "swamp": {
+      "name": "Swamp", "kind": "area", "color": "#5d7a3a", "water": "#4d6b52", "foodOutline": "#3e5a22",
+      "area": { "x": 5900, "y": 5300, "width": 1700, "height": 1500 },
+      "speeds": { "land": 0.85, "water": 1, "mud": 1 }
+    },
+    "underground": {
+      "name": "Underground", "kind": "layer", "color": "#4a3a2e", "water": "#2f4a6b", "foodOutline": "#2e2219",
+      "speeds": { "land": 1, "water": 0.5, "mud": 1 }
+    },
+    "sky": {
+      "name": "Sky", "kind": "layer", "color": "#8ccaf0", "water": "#5aa6d6", "foodOutline": "#4a90c0",
+      "speeds": { "land": 1, "water": 0.8, "mud": 0.6 }
+    },
+    "space": {
+      "name": "Space", "kind": "layer", "color": "#141a3a", "water": "#2a2f6b", "foodOutline": "#3b3f8f",
+      "speeds": { "land": 1, "water": 1, "mud": 1 }
+    }
+  },
+  "sizes": {
+    "1": [24, 28], "2": [24, 34], "3": [40, 58], "4": [44, 66], "5": [50, 70], "6": [50, 70], "7": [50, 80], "8": [50, 80],
+    "9": [50, 84], "10": [50, 88], "11": [50, 90], "12": [55, 92], "13": [60, 95], "14": [84, 115], "15": [86, 125],
+    "16": [100, 150], "17": [160, 230]
+  },
+  "animals": [
+    { "biome": "swamp", "tier": 1, "slug": "tadpole", "name": "Tadpole", "plan": "fish", "colors": ["#3b3a24", "#57553a", "#77744f", "#9a9566"], "ability": "Wiggle!", "description": "A tiny swimmer of the murky swamp." },
+    { "biome": "swamp", "tier": 2, "slug": "dragonfly", "name": "Dragonfly", "plan": "insect", "colors": ["#1f6b6b", "#2fa3a3", "#6fd6d6", "#c8f5f5"], "features": ["wings4"], "ability": "Hover!", "description": "Zips over swamp water." },
+    { "biome": "swamp", "tier": 3, "slug": "newt", "name": "Newt", "plan": "reptile", "colors": ["#b85a1a", "#e8792a", "#f6a35a", "#5a2a0a"], "features": ["spots"], "ability": "Slime!", "description": "Slippery and bright." },
+    { "biome": "swamp", "tier": 4, "slug": "leech", "name": "Leech", "plan": "worm", "colors": ["#3a1f24", "#5a2f36", "#7a4650", "#c25a6b"], "ability": "Latch On!", "description": "Sticks to anything warm." },
+    { "biome": "swamp", "tier": 5, "slug": "mudskipper", "name": "Mudskipper", "plan": "fish", "colors": ["#6b5a3a", "#8f7a4f", "#b39d6e", "#4a3a22"], "features": ["spots", "fins"], "ability": "Skip!", "description": "A fish that walks on mud." },
+    { "biome": "swamp", "tier": 6, "slug": "nutria", "name": "Nutria", "plan": "mammal", "colors": ["#5a3f2a", "#7a573b", "#a07856", "#e8902a"], "features": ["ears_round", "tail_thin", "teeth"], "ability": "Gnaw!", "description": "A big swamp rodent with orange teeth." },
+    { "biome": "swamp", "tier": 7, "slug": "snapping_turtle", "name": "Snapping Turtle", "plan": "turtle", "colors": ["#3f4a2a", "#5a6b3a", "#6b6b4a", "#2a3318"], "ability": "Snap!", "description": "Hide in your shell, snap at the rest." },
+    { "biome": "swamp", "tier": 8, "slug": "cottonmouth", "name": "Cottonmouth", "plan": "snake", "colors": ["#3a3a30", "#55554a", "#8a8a78", "#f2f2e8"], "ability": "Venom Bite!", "description": "Opens wide to show its white mouth." },
+    { "biome": "swamp", "tier": 9, "slug": "heron", "name": "Heron", "plan": "bird", "colors": ["#6f7f8f", "#9aa9b8", "#d0dae3", "#e8c23a"], "features": ["beak_long"], "ability": "Spear Fish!", "description": "Stalks the shallows." },
+    { "biome": "swamp", "tier": 10, "slug": "giant_otter", "name": "Giant Otter", "plan": "mammal", "colors": ["#4a3220", "#6b4a30", "#8f6a48", "#d8c0a0"], "features": ["ears_small", "tail_thick"], "ability": "Dive!", "description": "The swamp's playful hunter." },
+    { "biome": "swamp", "tier": 11, "slug": "alligator_gar", "name": "Alligator Gar", "plan": "fish", "colors": ["#4f5a3a", "#6f7f50", "#9aaa70", "#2f3820"], "features": ["snout", "spots"], "ability": "Lunge!", "description": "An armoured fish with a gator's snout." },
+    { "biome": "swamp", "tier": 12, "slug": "bog_monitor", "name": "Bog Monitor", "plan": "reptile", "colors": ["#3a4a2a", "#556b3b", "#7a9055", "#22301a"], "features": ["spots"], "ability": "Tail Whip!", "description": "A great lizard of the bog." },
+    { "biome": "swamp", "tier": 13, "slug": "marsh_panther", "name": "Marsh Panther", "plan": "mammal", "colors": ["#1f2a1f", "#2f3f2f", "#4a5f4a", "#c2d63a"], "features": ["ears_pointed", "tail_thin"], "ability": "Pounce!", "description": "A shadow in the reeds." },
+    { "biome": "swamp", "tier": 14, "slug": "anaconda", "name": "Anaconda", "plan": "snake", "colors": ["#3a4a1f", "#5a6b2a", "#8a9a40", "#22300f"], "features": ["spots"], "ability": "Constrict!", "description": "Squeezes its prey." },
+    { "biome": "swamp", "tier": 15, "slug": "bog_troll", "name": "Bog Troll", "plan": "golem", "colors": ["#3f5a2a", "#5a7a3a", "#7f9f55", "#9a7a3a"], "features": ["moss"], "ability": "Mud Slam!", "description": "Made of moss, mud and bad temper." },
+    { "biome": "swamp", "tier": 16, "slug": "swamp_monster", "name": "Swamp Monster", "plan": "monster", "colors": ["#2a3f2a", "#3f5a3a", "#5f7f50", "#a0c23a"], "features": ["moss"], "ability": "Swamp Surge!", "description": "Rises from the deepest bog." },
+    { "biome": "swamp", "tier": 17, "slug": "hydra", "name": "Hydra", "plan": "dragon", "colors": ["#1f4a3a", "#2f6b55", "#4f9a7a", "#c2f0a0"], "features": ["heads3"], "ability": "Triple Bite!", "description": "Three heads rule the swamp." },
+
+    { "biome": "underground", "tier": 1, "slug": "earthworm", "name": "Earthworm", "plan": "worm", "colors": ["#b5656b", "#d98a8f", "#f0b0b3", "#8a3f45"], "ability": "Burrow!", "description": "Wriggles through the dirt." },
+    { "biome": "underground", "tier": 2, "slug": "cave_cricket", "name": "Cave Cricket", "plan": "insect", "colors": ["#5a4a3a", "#7a6650", "#a08a6e", "#3a2f22"], "features": ["antennae_long"], "ability": "Jump!", "description": "Long legs, longer feelers." },
+    { "biome": "underground", "tier": 3, "slug": "glowworm", "name": "Glowworm", "plan": "worm", "colors": ["#3f6b3f", "#6fd66f", "#b0ffb0", "#e8ffb0"], "features": ["glow"], "ability": "Glow!", "description": "Lights up the dark tunnels." },
+    { "biome": "underground", "tier": 4, "slug": "naked_mole_rat", "name": "Naked Mole Rat", "plan": "mammal", "colors": ["#c48a7a", "#e8a898", "#f6c8bb", "#f2e6b0"], "features": ["teeth", "tail_thin"], "ability": "Dig!", "description": "Wrinkly, tough and always digging." },
+    { "biome": "underground", "tier": 5, "slug": "cave_beetle", "name": "Cave Beetle", "plan": "insect", "colors": ["#2a2440", "#3f3660", "#6a5f99", "#a89ae0"], "features": ["shell"], "ability": "Shell Up!", "description": "A shiny armoured beetle." },
+    { "biome": "underground", "tier": 6, "slug": "olm", "name": "Olm", "plan": "reptile", "colors": ["#d8c8c8", "#efe0e0", "#fff5f5", "#f07a8a"], "features": ["gills"], "ability": "Sense!", "description": "A pale cave salamander that never sees the sun." },
+    { "biome": "underground", "tier": 7, "slug": "cave_bat", "name": "Cave Bat", "plan": "bat", "colors": ["#3a2f3f", "#55465c", "#7a6a82", "#2a202e"], "ability": "Echo!", "description": "Hangs from the cave ceiling." },
+    { "biome": "underground", "tier": 8, "slug": "badger", "name": "Badger", "plan": "mammal", "colors": ["#2a2a2a", "#3f3f3f", "#e8e8e8", "#e8e8e8"], "features": ["ears_small", "stripes", "tail_thin"], "ability": "Fury!", "description": "Small, fierce and fearless." },
+    { "biome": "underground", "tier": 9, "slug": "centipede", "name": "Centipede", "plan": "centipede", "colors": ["#6b2a1a", "#9a3f22", "#c25a30", "#3a1408"], "ability": "Pincer!", "description": "A hundred legs, all in a hurry." },
+    { "biome": "underground", "tier": 10, "slug": "cave_spider", "name": "Cave Spider", "plan": "spider", "colors": ["#2a2a35", "#3f3f50", "#6a6a80", "#c23a3a"], "ability": "Web!", "description": "Spins webs across the tunnels." },
+    { "biome": "underground", "tier": 11, "slug": "rock_python", "name": "Rock Python", "plan": "snake", "colors": ["#5a5048", "#7a6e62", "#9a8e80", "#3a322b"], "features": ["spots"], "ability": "Coil!", "description": "Blends into the cave walls." },
+    { "biome": "underground", "tier": 12, "slug": "cave_bear", "name": "Cave Bear", "plan": "mammal", "colors": ["#3a2a1f", "#55402f", "#7a5f48", "#a08060"], "features": ["ears_round", "tail_stub"], "ability": "Maul!", "description": "The ancient bear of the caves." },
+    { "biome": "underground", "tier": 13, "slug": "crystal_golem", "name": "Crystal Golem", "plan": "golem", "colors": ["#4a4a6b", "#6a6a9a", "#a0a0d6", "#7fe0ff"], "features": ["crystals"], "ability": "Shatter!", "description": "Grown from the cave's crystals." },
+    { "biome": "underground", "tier": 14, "slug": "giant_mole", "name": "Giant Mole", "plan": "mammal", "colors": ["#2f2a2a", "#4a4040", "#6b5f5f", "#f0a0b0"], "features": ["claws", "tail_stub"], "ability": "Tunnel!", "description": "Digs tunnels big enough for anyone." },
+    { "biome": "underground", "tier": 15, "slug": "cave_wyrm", "name": "Cave Wyrm", "plan": "dragon", "colors": ["#4a3a5a", "#6b558a", "#9a80b8", "#e0c8ff"], "features": ["wingless"], "ability": "Rumble!", "description": "A wingless dragon of the deep." },
+    { "biome": "underground", "tier": 16, "slug": "magma_worm", "name": "Magma Worm", "plan": "worm", "colors": ["#8a2a0a", "#d9520f", "#ffa03a", "#ffe08a"], "features": ["glow"], "ability": "Eruption!", "description": "Swims through molten rock." },
+    { "biome": "underground", "tier": 17, "slug": "earth_titan", "name": "Earth Titan", "plan": "golem", "colors": ["#4a3f30", "#6b5a45", "#8f7a60", "#3ae0a0"], "features": ["crystals", "horns"], "ability": "Earthquake!", "description": "The mountain that walks." },
+
+    { "biome": "sky", "tier": 1, "slug": "butterfly", "name": "Butterfly", "plan": "insect", "colors": ["#d96b1f", "#ff9a3a", "#ffd08a", "#2a1a0a"], "features": ["wings_butterfly"], "ability": "Flutter!", "description": "Drifts on the breeze." },
+    { "biome": "sky", "tier": 2, "slug": "hummingbird", "name": "Hummingbird", "plan": "bird", "colors": ["#1f8a6b", "#2fbf8f", "#8fffd0", "#2a2a2a"], "features": ["beak_needle"], "ability": "Hover!", "description": "Wings faster than the eye can see." },
+    { "biome": "sky", "tier": 3, "slug": "swallow", "name": "Swallow", "plan": "bird", "colors": ["#1f2a5a", "#2f3f8a", "#e8e8f5", "#c23a2a"], "features": ["tail_fork"], "ability": "Swoop!", "description": "Darts through the clouds." },
+    { "biome": "sky", "tier": 4, "slug": "cloud_puff", "name": "Cloud Puff", "plan": "blob", "colors": ["#c8d8e8", "#e8f2fa", "#ffffff", "#a0c0e0"], "features": ["fluffy"], "ability": "Puff!", "description": "A little living cloud." },
+    { "biome": "sky", "tier": 5, "slug": "seagull", "name": "Seagull", "plan": "bird", "colors": ["#b0b8c0", "#e8ecef", "#ffffff", "#f0b030"], "features": ["wingtips"], "ability": "Squawk!", "description": "Always hungry, always loud." },
+    { "biome": "sky", "tier": 6, "slug": "albatross", "name": "Albatross", "plan": "bird", "colors": ["#8a9098", "#dfe3e8", "#ffffff", "#f0c0a0"], "features": ["wings_long"], "ability": "Glide!", "description": "Can glide for days." },
+    { "biome": "sky", "tier": 7, "slug": "flying_squirrel", "name": "Flying Squirrel", "plan": "glider", "colors": ["#8a6a4a", "#b08a62", "#e0c8a8", "#5a4430"], "ability": "Glide!", "description": "Spreads out and sails." },
+    { "biome": "sky", "tier": 8, "slug": "crane", "name": "Crane", "plan": "bird", "colors": ["#d0d0d0", "#f0f0f0", "#ffffff", "#d0302a"], "features": ["beak_long", "crown"], "ability": "Dance!", "description": "Graceful, tall and proud." },
+    { "biome": "sky", "tier": 9, "slug": "condor", "name": "Condor", "plan": "bird", "colors": ["#1a1a1a", "#2f2f2f", "#e8e8e8", "#e8a0a0"], "features": ["wings_long", "ruff"], "ability": "Soar!", "description": "The giant of the mountain winds." },
+    { "biome": "sky", "tier": 10, "slug": "sky_ray", "name": "Sky Ray", "plan": "ray", "colors": ["#3a7ac0", "#5aa0e8", "#a0d0ff", "#1f4a80"], "ability": "Glide!", "description": "Swims through the air like the sea." },
+    { "biome": "sky", "tier": 11, "slug": "harpy_eagle", "name": "Harpy Eagle", "plan": "bird", "colors": ["#3a3a40", "#6a6a70", "#d8d8d8", "#f0c030"], "features": ["crest"], "ability": "Talon Grab!", "description": "The fiercest bird in the sky." },
+    { "biome": "sky", "tier": 12, "slug": "thunderbird", "name": "Thunderbird", "plan": "bird", "colors": ["#2a3a8a", "#3f5ac0", "#8aa0ff", "#ffd83a"], "features": ["lightning", "wings_long"], "ability": "Thunderclap!", "description": "Its wings bring the storm." },
+    { "biome": "sky", "tier": 13, "slug": "griffin", "name": "Griffin", "plan": "griffin", "colors": ["#a07a3a", "#c8a050", "#f0e0b0", "#e8e8e8"], "ability": "Dive Bomb!", "description": "Half eagle, half lion." },
+    { "biome": "sky", "tier": 14, "slug": "pegasus", "name": "Pegasus", "plan": "horse", "colors": ["#c8c8dc", "#f2f2fa", "#ffffff", "#7ab0f0"], "ability": "Gallop!", "description": "A winged horse above the clouds." },
+    { "biome": "sky", "tier": 15, "slug": "sky_whale", "name": "Sky Whale", "plan": "whale", "colors": ["#5a7ab0", "#7aa0d8", "#c0dcff", "#3a5a90"], "ability": "Gust!", "description": "Drifts through the sky like a ship." },
+    { "biome": "sky", "tier": 16, "slug": "storm_monster", "name": "Storm Monster", "plan": "monster", "colors": ["#3a3f5a", "#555a7a", "#8a90b0", "#ffd83a"], "features": ["lightning"], "ability": "Lightning Storm!", "description": "A living thundercloud." },
+    { "biome": "sky", "tier": 17, "slug": "storm_dragon", "name": "Storm Dragon", "plan": "dragon", "colors": ["#2a4a8a", "#3f6ac0", "#8ab8ff", "#ffe85a"], "features": ["lightning"], "ability": "Thunder Breath!", "description": "Rules the sky from the eye of the storm." },
+
+    { "biome": "space", "tier": 1, "slug": "star_mite", "name": "Star Mite", "plan": "insect", "colors": ["#6a5a9a", "#9a8ad0", "#d0c8ff", "#ffe85a"], "ability": "Twinkle!", "description": "A speck of life among the stars." },
+    { "biome": "space", "tier": 2, "slug": "moon_moth", "name": "Moon Moth", "plan": "insect", "colors": ["#b0b0c8", "#d8d8ee", "#ffffff", "#8a8ab0"], "features": ["wings_butterfly"], "ability": "Moonlight!", "description": "Drawn to the light of distant moons." },
+    { "biome": "space", "tier": 3, "slug": "nebula_jelly", "name": "Nebula Jelly", "plan": "jelly", "colors": ["#8a3a9a", "#c25ad6", "#f0a0ff", "#ffe0ff"], "ability": "Pulse!", "description": "Floats like a tiny nebula." },
+    { "biome": "space", "tier": 4, "slug": "moon_rabbit", "name": "Moon Rabbit", "plan": "mammal", "colors": ["#c0c0d0", "#e0e0ee", "#ffffff", "#f0b0c0"], "features": ["ears_long", "tail_puff"], "ability": "Moon Hop!", "description": "Hops in low gravity." },
+    { "biome": "space", "tier": 5, "slug": "alien_slug", "name": "Alien Slug", "plan": "worm", "colors": ["#3a8a3a", "#5ac25a", "#a0ffa0", "#1a4a1a"], "features": ["eyestalks"], "ability": "Goo!", "description": "Leaves a glowing trail." },
+    { "biome": "space", "tier": 6, "slug": "asteroid_crab", "name": "Asteroid Crab", "plan": "crab", "colors": ["#5a5560", "#7a7580", "#a8a3ae", "#3a3540"], "ability": "Pinch!", "description": "Lives on drifting rocks." },
+    { "biome": "space", "tier": 7, "slug": "space_squid", "name": "Space Squid", "plan": "squid", "colors": ["#3a2a6b", "#55409a", "#8a70d6", "#ffd8ff"], "ability": "Ink Cloud!", "description": "Swims through the void." },
+    { "biome": "space", "tier": 8, "slug": "comet_fox", "name": "Comet Fox", "plan": "mammal", "colors": ["#2a6ab0", "#3f8ae0", "#a0d0ff", "#ffffff"], "features": ["ears_pointed", "tail_comet"], "ability": "Comet Dash!", "description": "Its tail glows like a comet." },
+    { "biome": "space", "tier": 9, "slug": "meteor_beetle", "name": "Meteor Beetle", "plan": "insect", "colors": ["#8a3a1a", "#c2552a", "#ff9a5a", "#ffd83a"], "features": ["shell"], "ability": "Impact!", "description": "Hard as a falling meteor." },
+    { "biome": "space", "tier": 10, "slug": "martian", "name": "Martian", "plan": "alien", "colors": ["#3a8a5a", "#55c27f", "#a0ffc8", "#1a3a2a"], "ability": "Probe!", "description": "Little green and very curious." },
+    { "biome": "space", "tier": 11, "slug": "space_shark", "name": "Space Shark", "plan": "fish", "colors": ["#3a4a6b", "#556a9a", "#a8b8d8", "#e8f0ff"], "features": ["shark"], "ability": "Bite!", "description": "The predator of the void." },
+    { "biome": "space", "tier": 12, "slug": "void_ray", "name": "Void Ray", "plan": "ray", "colors": ["#1a102a", "#2a1a45", "#6a3ab0", "#c08aff"], "features": ["stars"], "ability": "Phase!", "description": "Glides between the stars." },
+    { "biome": "space", "tier": 13, "slug": "star_eater", "name": "Star Eater", "plan": "blob", "colors": ["#2a1a3a", "#45285f", "#7a4aa0", "#ffd83a"], "features": ["mouth", "stars"], "ability": "Devour!", "description": "Swallows stars whole." },
+    { "biome": "space", "tier": 14, "slug": "cosmic_whale", "name": "Cosmic Whale", "plan": "whale", "colors": ["#1f2a6b", "#2f3f9a", "#8ab0ff", "#ffffff"], "features": ["stars"], "ability": "Starsong!", "description": "Sings across galaxies." },
+    { "biome": "space", "tier": 15, "slug": "solar_phoenix", "name": "Solar Phoenix", "plan": "bird", "colors": ["#d9521f", "#ff8a2a", "#ffd83a", "#fff2a0"], "features": ["fire", "wings_long"], "ability": "Solar Flare!", "description": "Reborn in the heart of a sun." },
+    { "biome": "space", "tier": 16, "slug": "void_monster", "name": "Void Monster", "plan": "monster", "colors": ["#1a0f2a", "#2f1a4a", "#5a3a8a", "#8a3aff"], "features": ["stars"], "ability": "Black Hole!", "description": "Made of nothing at all." },
+    { "biome": "space", "tier": 17, "slug": "galaxy_dragon", "name": "Galaxy Dragon", "plan": "dragon", "colors": ["#2a1a6b", "#452a9a", "#7a5ad6", "#c08aff"], "features": ["stars"], "ability": "Supernova!", "description": "Carries a galaxy on its wings." }
+  ],
+  "foods": [
+    { "biome": "swamp", "slug": "duckweed", "name": "Duckweed", "tiers": [1, 9], "shape": "leaves", "colors": ["#4a8a2a", "#6fbf3a", "#a0e060"] },
+    { "biome": "swamp", "slug": "swamp_berry", "name": "Swamp Berry", "tiers": [1, 8], "shape": "berry", "colors": ["#4a2a6b", "#6b3f9a", "#a080d0"] },
+    { "biome": "swamp", "slug": "cattail", "name": "Cattail", "tiers": [3, 17], "shape": "cattail", "colors": ["#5a3a1a", "#8a5a2a", "#6fbf3a"] },
+    { "biome": "swamp", "slug": "bog_mushroom", "name": "Bog Mushroom", "tiers": [5, 17], "shape": "mushroom", "colors": ["#6b6b2a", "#9a9a3a", "#e8e0c0"] },
+    { "biome": "swamp", "slug": "firefly", "name": "Firefly", "tiers": [7, 17], "shape": "bug", "colors": ["#3a3a2a", "#f0e050", "#ffff9a"] },
+    { "biome": "swamp", "slug": "lotus", "name": "Lotus", "tiers": [9, 17], "shape": "flower", "colors": ["#c25a8a", "#f08ab8", "#ffe060"], "big": true },
+    { "biome": "swamp", "slug": "gator_egg", "name": "Gator Egg", "tiers": [11, 17], "shape": "egg", "colors": ["#c8b890", "#efe4c8", "#8a7a5a"], "big": true },
+
+    { "biome": "underground", "slug": "grub", "name": "Grub", "tiers": [1, 9], "shape": "grub", "colors": ["#c8b090", "#f0e0c0", "#8a6a4a"] },
+    { "biome": "underground", "slug": "root", "name": "Root", "tiers": [2, 17], "shape": "root", "colors": ["#6b4a2a", "#9a6e40", "#c8a070"] },
+    { "biome": "underground", "slug": "glow_mushroom", "name": "Glow Mushroom", "tiers": [4, 17], "shape": "mushroom", "colors": ["#1a8a9a", "#3ae0f0", "#d0fbff"] },
+    { "biome": "underground", "slug": "truffle", "name": "Truffle", "tiers": [7, 17], "shape": "lump", "colors": ["#2a1f18", "#4a3a2e", "#6b5848"] },
+    { "biome": "underground", "slug": "cave_crystal", "name": "Cave Crystal", "tiers": [10, 17], "shape": "crystal", "colors": ["#6a3ab0", "#a070f0", "#e0c8ff"], "big": true },
+    { "biome": "underground", "slug": "fossil_bone", "name": "Fossil Bone", "tiers": [12, 17], "shape": "bone", "colors": ["#a8987a", "#d8c8a8", "#f0e8d0"], "big": true },
+    { "biome": "underground", "slug": "ore_nugget", "name": "Ore Nugget", "tiers": [14, 17], "shape": "nugget", "colors": ["#a07a10", "#f0c030", "#fff0a0"], "big": true },
+
+    { "biome": "sky", "slug": "sky_berry", "name": "Sky Berry", "tiers": [1, 9], "shape": "berry", "colors": ["#2a5ab0", "#4a8ae8", "#b0d8ff"] },
+    { "biome": "sky", "slug": "seed_pod", "name": "Seed Pod", "tiers": [1, 8], "shape": "seed", "colors": ["#8a6a3a", "#c09a5a", "#e8d0a0"] },
+    { "biome": "sky", "slug": "feather", "name": "Feather", "tiers": [3, 17], "shape": "feather", "colors": ["#a0b0c0", "#f0f4f8", "#ffffff"] },
+    { "biome": "sky", "slug": "sun_seed", "name": "Sun Seed", "tiers": [5, 17], "shape": "seed", "colors": ["#c08a10", "#f0c030", "#fff0a0"] },
+    { "biome": "sky", "slug": "rainbow_fruit", "name": "Rainbow Fruit", "tiers": [8, 17], "shape": "rainbow", "colors": ["#e04040", "#f0c030", "#40a0f0"] },
+    { "biome": "sky", "slug": "cloud_candy", "name": "Cloud Candy", "tiers": [10, 17], "shape": "cotton", "colors": ["#e080b0", "#ffb0d8", "#ffffff"], "big": true },
+    { "biome": "sky", "slug": "lightning_orb", "name": "Lightning Orb", "tiers": [13, 17], "shape": "orb", "colors": ["#c09a10", "#ffe040", "#fffbd0"], "big": true },
+
+    { "biome": "space", "slug": "stardust", "name": "Stardust", "tiers": [1, 9], "shape": "sparkle", "colors": ["#c0a0ff", "#ffffff", "#ffe85a"] },
+    { "biome": "space", "slug": "comet_berry", "name": "Comet Berry", "tiers": [2, 17], "shape": "berry", "colors": ["#3a8ab0", "#7ad0f0", "#e0f8ff"] },
+    { "biome": "space", "slug": "moon_cheese", "name": "Moon Cheese", "tiers": [3, 17], "shape": "wedge", "colors": ["#c8a830", "#f0d860", "#a08820"] },
+    { "biome": "space", "slug": "star_fruit", "name": "Star Fruit", "tiers": [6, 17], "shape": "star", "colors": ["#d0a010", "#ffd83a", "#fff2a0"] },
+    { "biome": "space", "slug": "cosmic_candy", "name": "Cosmic Candy", "tiers": [8, 17], "shape": "candy", "colors": ["#8a3ad6", "#c08aff", "#ffffff"] },
+    { "biome": "space", "slug": "meteor_rock", "name": "Meteor Rock", "tiers": [10, 17], "shape": "rock", "colors": ["#6a2a1a", "#a0452a", "#ff8a3a"], "big": true },
+    { "biome": "space", "slug": "mini_planet", "name": "Mini Planet", "tiers": [13, 17], "shape": "planet", "colors": ["#2a6ab0", "#4aa0e8", "#e8c870"], "big": true }
+  ]
+}

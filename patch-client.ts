@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { REGIONS } from "./regions.js";
 import { PUMPKINS, PUMPKIN_COLOURS } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
+import { CUSTOM } from "./custom-biomes.js";
 
 const dir = process.argv[2] ?? "mope-dump/site/mope.io";
 const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith(".js")).map((f) => join(dir, f));
@@ -94,6 +95,36 @@ globalThis.localtest = {
     box.style.display = show ? \`flex\` : \`none\`;
   }, 250);
 })();
+// Custom biomes: classes for the new animals and foods (built once, on first use), and switching
+// the map between the surface and the layer worlds when the server says so.
+function __cbAnimal(n) {
+  let c = (globalThis.__cbA ??= {});
+  return (c[n] ??= class extends W {});
+}
+function __cbFood(n) {
+  let c = (globalThis.__cbF ??= {});
+  return (c[n] ??= class extends G {});
+}
+function __cbSetLayer(name) {
+  let surface = (globalThis.__cbSurface ??= JSON.parse(JSON.stringify(pg.biomes)));
+  if ((globalThis.__cbLayer ?? \`surface\`) === name) return;
+  let w = 0,
+    h = 0;
+  for (let b of Object.values(surface)) ((w = Math.max(w, b.x + b.width / 2)), (h = Math.max(h, b.y + b.height / 2)));
+  let next = name === \`surface\` ? surface : { [name]: { x: w / 2, y: h / 2, z: 1, width: w, height: h } };
+  for (let k of Object.keys(pg.biomes)) delete pg.biomes[k];
+  Object.assign(pg.biomes, JSON.parse(JSON.stringify(next)));
+  globalThis.__cbLayer = name;
+  let m = $.map;
+  if (!m) return;
+  ((m.biomes = m.generateBiomes(pg.biomes)), (m.shape = m.generateShape()));
+  m.init().then(() => $.minimap?.generate?.());
+}
+function __cbLayerMessage(e) {
+  let m = e?.message;
+  if (typeof m !== \`string\` || !m.startsWith(\`\\u0001layer:\`)) return !1;
+  return (__cbSetLayer(m.slice(7)), !0);
+}
 ${END}
 `;
 
@@ -159,6 +190,13 @@ const edits: [string, string, string?][] = [
     "let { servers: t, regions: n, stats: r, playerCount: i } = await Nl(e);",
     "let { servers: t, regions: n, stats: r, playerCount: i } = await localServers();",
   ],
+  // Custom biomes travel as land, so the wrong-biome hint skips animals from them.
+  [
+    "              ? t\n              : E[t];\n      return n === void 0 || e.biome === n",
+    "              ? t\n              : E[t] > E.volcano\n                ? void 0\n                : E[t];\n      return n === void 0 || e.biome === n",
+  ],
+  // Layer switches (custom biomes) ride on serverMessage with a \u0001layer: prefix.
+  ["w.on(`serverMessage`, function (e) {\n", "w.on(`serverMessage`, function (e) {\n  if (__cbLayerMessage(e)) return;\n"],
 ];
 
 const changed = new Set<string>();
@@ -188,5 +226,79 @@ for (const [file, src] of sources) {
   if (i !== TIER_XP.length) throw new Error(`expected ${TIER_XP.length} tiers in Lr, found ${i}`);
   if (table !== src.slice(a, b)) sources.set(file, src.slice(0, a) + table + src.slice(b)), changed.add(file);
 }
+// ---------- custom biomes (custom-biomes.json) ----------
+// New animals, foods and biome names go into the client's own tables, each insertion wrapped in
+// /*cb:<tag>*/ ... /*cb:<tag>:end*/ right after a fixed anchor, so re-running replaces it.
+const cbOpen = (tag: string) => `/*cb:${tag}*/`;
+const cbClose = (tag: string) => `/*cb:${tag}:end*/`;
+const stripCb = (text: string, tag: string) => {
+  const a = text.indexOf(cbOpen(tag));
+  return a < 0 ? text : text.slice(0, a) + text.slice(text.indexOf(cbClose(tag)) + cbClose(tag).length);
+};
+function cbFind(anchor: string): [string, string, number] {
+  const hits = [...sources].filter(([, src]) => src.includes(anchor));
+  if (hits.length !== 1 || hits[0][1].split(anchor).length !== 2) throw new Error(`custom biomes: expected one match for:\n${anchor}`);
+  const [file, src] = hits[0];
+  return [file, src, src.indexOf(anchor) + anchor.length];
+}
+function cbUpsert(anchor: string, tag: string, code: string) {
+  const [file, src, at] = cbFind(anchor);
+  let rest = src.slice(at);
+  if (rest.startsWith(cbOpen(tag))) rest = rest.slice(rest.indexOf(cbClose(tag)) + cbClose(tag).length);
+  const next = src.slice(0, at) + cbOpen(tag) + code + cbClose(tag) + rest;
+  if (next !== src) sources.set(file, next), changed.add(file);
+}
+// Highest id in the enum that starts at `anchor`, not counting our own entries.
+function cbEnumNext(anchor: string, tag: string) {
+  const [, src, at] = cbFind(anchor);
+  const body = stripCb(src.slice(at - anchor.length, src.indexOf("\n      e\n    );", at)), tag);
+  return Math.max(...[...body.matchAll(/ = (\d+)\)\]/g)].map((m) => +m[1])) + 1;
+}
+const tick = (s: string) => "`" + s.replace(/[`\\$]/g, (c) => "\\" + c) + "`";
+const enumEntries = (names: string[], first: number) => names.map((n, i) => `(e[(e.${n} = ${first + i})] = ${tick(n)}),`).join("");
+
+const biomeIds = Object.keys(CUSTOM.biomes);
+cbUpsert("(e[(e.mouse = 0)] = `mouse`),", "T", enumEntries(CUSTOM.animals.map((a: any) => a.slug), cbEnumNext("(e[(e.mouse = 0)] = `mouse`),", "T")));
+cbUpsert("(e[(e.berry = 1)] = `berry`),", "D", enumEntries(CUSTOM.foods.map((f: any) => f.slug), cbEnumNext("(e[(e.berry = 1)] = `berry`),", "D")));
+cbUpsert("(e[(e.volcano = 4)] = `volcano`),", "E", enumEntries(biomeIds, cbEnumNext("(e[(e.volcano = 4)] = `volcano`),", "E")));
+
+const WATER_PLANS = new Set(["fish", "whale", "squid", "jelly"]);
+const speedsOf = (a: any) => {
+  const s = { ...CUSTOM.biomes[a.biome].speeds };
+  if (WATER_PLANS.has(a.plan) && a.biome === "swamp") Object.assign(s, { land: 0.4, water: 1, mud: 1 });
+  return s;
+};
+cbUpsert("var M = zr({\n", "M", "\n" + CUSTOM.animals.map((a: any) => {
+  const sp = speedsOf(a);
+  const zones = [sp.land >= 0.8 && 0, sp.water >= 0.8 && 1, sp.mud >= 0.8 && 2].filter((z) => z !== false);
+  const [min, max] = CUSTOM.sizes[a.tier];
+  return `  ${a.slug}: { comfortZones: new j([${zones.join(", ")}]), ability1Duration: 1 / 0, ability1InputMode: \`hold\`, biome: ${tick(a.biome)}, biomes: [${tick(a.biome)}], minimumSize: ${min}, maximumSize: ${max}, terrainSpeedComfort: { land: ${sp.land}, water: ${sp.water}, mud: ${sp.mud} } },\n`;
+}).join(""));
+cbUpsert("var Ul = {\n", "Ul", "\n" + CUSTOM.foods.map((f: any) => `  ${f.slug}: { minimumTier: ${f.tiers[0]}, maximumTier: ${f.tiers[1]} },\n`).join(""));
+cbUpsert("  dp = e({\n", "dp", "\n" + CUSTOM.animals.map((a: any) => `    ${a.slug}: () => __cbAnimal(${tick(a.slug)}),\n`).join(""));
+cbUpsert("  am = e({\n", "am", "\n" + CUSTOM.foods.map((f: any) => `    ${f.slug}: () => __cbFood(${tick(f.slug)}),\n`).join(""));
+cbUpsert("  vi = {\n", "vi", "\n" + CUSTOM.animals.map((a: any) =>
+  `    ${a.slug}: { name: ${tick(a.name)}, ability1: ${tick(a.ability ?? "")}, description: ${tick(a.description ?? "")} },\n`).join(""));
+cbUpsert("    biomes: {\n      land: `#24B645`,\n", "colors", "\n" + biomeIds.map((id) => `      ${id}: ${tick(CUSTOM.biomes[id].color)},\n`).join(""));
+cbUpsert("    outline: {\n      land: `#09992F`,\n", "outline", "\n" + biomeIds.map((id) => `      ${id}: ${tick(CUSTOM.biomes[id].foodOutline)},\n`).join(""));
+cbUpsert("var pg = {\n    scale: 1,\n    biomes: {\n", "pg", "\n" + biomeIds.filter((id) => CUSTOM.biomes[id].kind === "area").map((id) => {
+  const r = CUSTOM.biomes[id].area;
+  return `      ${id}: { x: ${r.x}, y: ${r.y}, z: 2, width: ${r.width}, height: ${r.height} },\n`;
+}).join(""));
+// Each tier's animals in Lr gain that tier's custom animals.
+{
+  const anchor = "\n  Lr = [\n";
+  const [file, src, at] = cbFind(anchor);
+  const end = src.indexOf("\n  ],\n", at);
+  let tier = 0;
+  const table = src.slice(at, end).replace(/animals: \[([^\]]*?)(\/\*cb:Lr\*\/[^\]]*?\/\*cb:Lr:end\*\/)?\]/g, (_m, list) => {
+    tier++;
+    const extra = CUSTOM.animals.filter((a: any) => a.tier === tier).map((a: any) => `T.${a.slug}`);
+    return `animals: [${list.replace(/[\s,]+$/, "")}${extra.length ? `${cbOpen("Lr")}, ${extra.join(", ")}${cbClose("Lr")}` : ""}]`;
+  });
+  if (tier !== 17) throw new Error(`custom biomes: expected 17 tiers in Lr, found ${tier}`);
+  if (table !== src.slice(at, end)) sources.set(file, src.slice(0, at) + table + src.slice(end)), changed.add(file);
+}
+
 for (const file of changed) await writeFile(file, sources.get(file)!);
 console.log(changed.size ? `patched ${[...changed].join(", ")}` : "already patched");

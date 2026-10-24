@@ -5,6 +5,12 @@
 // Mope's real server decides these server-side, so the counts, sizes and food lists below are our
 // own choices, picked to look like a normal Mope map.
 
+import { CUSTOM } from "./custom-biomes.js";
+
+// Custom foods by biome (custom-biomes.json).
+export const CUSTOM_FOODS = Object.fromEntries(Object.keys(CUSTOM.biomes).map((id) => [id, CUSTOM.foods.filter((f) => f.biome === id).map((f) => f.slug)]));
+const CUSTOM_BIG = new Set(CUSTOM.foods.filter((f) => f.big).map((f) => f.slug));
+
 // Seeded PRNG so each lobby's map is stable across restarts.
 function rng(seed) {
   let s = seed >>> 0;
@@ -182,7 +188,74 @@ export function generateWorld({ pg, E, D, cm, pm, sg, seed = 1 }) {
     around(tree.x, tree.y, tree.size * 0.6, tree.size, 2, (x, y) => addFood("honeycomb", "land", x, y));
   }
 
+  // Swamp (an area of the land biome): murky water, mud and reeds, with its own foods. Things on
+  // the wire keep the land biome, which the client knows how to colour.
+  const swamp = B.swamp;
+  if (swamp) {
+    const area = rect(swamp, 60);
+    const inSwamp = (e) => Math.abs(e.x - swamp.x) < swamp.width / 2 && Math.abs(e.y - swamp.y) < swamp.height / 2;
+    for (let i = out.length - 1; i >= 0; i--) if (out[i].type === "food" && inSwamp(out[i])) out.splice(i, 1);
+    scatter(area, 14, (x, y) => add("mud", sg.LAND, "land", x, y, between(160, 260)), false);
+    scatter(area, 16, (x, y) => add("puddle", pm.LAND, "land", x, y, between(90, 160)), false);
+    scatter(area, 5, (x, y) => add("lake", 0, "land", x, y, between(220, 340)), false);
+    scatter(area, 10, (x, y) => add("bush", 0, "land", x, y, between(60, 100)), false);
+    scatter(area, 6, (x, y) => add("tree", cm.LAND, "land", x, y, between(110, 160)), false);
+    scatter(area, 220, (x, y) => customFood(pick(CUSTOM_FOODS.swamp), "land", x, y), false);
+  }
+
+  // Tunnel entrances to the underground: two big holes in each surface biome.
+  for (const [biome, area] of [["land", areas.land], ["arctic", areas.arctic], ["desert", areas.desert], ...(swamp ? [["land", rect(swamp, 200)]] : [])])
+    scatter(area, 2, (x, y) => add("hole", 0, biome, x, y, 110, { portal: "underground" }), biome === "land");
+
   return { entities: out, volcano, areas };
+
+  function customFood(name, biome, x, y) {
+    add("food", D[name], biome, x, y, CUSTOM_BIG.has(name) ? between(28, 40) : between(16, 26));
+  }
+}
+
+// A layer world (underground, sky, space): the whole map is that one biome. Terrain reuses the
+// client's own objects in colours that fit (brown rocks underground, white hills as clouds in the
+// sky, blue-grey rocks as asteroids in space). Holes are the portals back out.
+export function generateLayerWorld({ layer, pg, E, D, cm, pm, sg, seed = 1 }) {
+  const rand = rng(seed * 7 + layer.length);
+  const between = (a, b) => a + rand() * (b - a);
+  const pick = (list) => list[Math.floor(rand() * list.length)];
+  let w = 0, h = 0;
+  for (const b of Object.values(pg.biomes)) (w = Math.max(w, b.x + b.width / 2)), (h = Math.max(h, b.y + b.height / 2));
+  const out = [];
+  const add = (type, species, biome, x, y, size, extra = {}) =>
+    out.push({ type, species, biome: E[biome], x, y, size: Math.round(size), angle: rand() * Math.PI * 2, ...extra });
+  const scatter = (n, fn, pad = 200) => {
+    for (let i = 0; i < n; i++) fn(between(pad, w - pad), between(pad, h - pad));
+  };
+  const foods = CUSTOM_FOODS[layer] ?? [];
+  const food = (n, biome) =>
+    scatter(n, (x, y) => {
+      const name = pick(foods);
+      add("food", D[name], biome, x, y, CUSTOM_BIG.has(name) ? between(28, 40) : between(16, 26));
+    });
+  if (layer === "underground") {
+    scatter(70, (x, y) => add("rock", 0, "desert", x, y, between(80, 200)));
+    scatter(25, (x, y) => add("hill", 0, "desert", x, y, between(160, 280)));
+    scatter(18, (x, y) => add("mud", sg.DESERT, "desert", x, y, between(150, 260)));
+    scatter(8, (x, y) => add("lake", 0, "land", x, y, between(240, 380)));
+    scatter(14, (x, y) => add("puddle", pm.LAND, "land", x, y, between(90, 150)));
+    scatter(10, (x, y) => add("hole", 0, "desert", x, y, 110, { portal: "surface" }));
+    food(900, "desert");
+  } else if (layer === "sky") {
+    scatter(60, (x, y) => add("hill", 0, "arctic", x, y, between(180, 320))); // clouds
+    scatter(20, (x, y) => add("bush", 0, "arctic", x, y, between(70, 110)));
+    scatter(6, (x, y) => add("lake", 0, "arctic", x, y, between(200, 320)));
+    scatter(8, (x, y) => add("hole", 0, "arctic", x, y, 120, { portal: "surface" })); // gaps in the clouds
+    food(900, "arctic");
+  } else if (layer === "space") {
+    scatter(80, (x, y) => add("rock", 0, "ocean", x, y, between(70, 220))); // asteroids
+    scatter(12, (x, y) => add("puddle", pm.LAVA, "land", x, y, between(80, 140))); // little suns
+    scatter(10, (x, y) => add("hole", 0, "ocean", x, y, 120, { portal: "sky" })); // wormholes
+    food(900, "ocean");
+  }
+  return { entities: out, volcano: { x: w / 2, y: h / 2, r: 0 }, areas: {} };
 }
 
 // A world from a map recorded on mope.io (see map-recorder.js): its objects and foods as recorded.

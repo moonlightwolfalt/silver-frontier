@@ -37,9 +37,9 @@ export function createParties() {
       return lobby && lobby.players.size < MAX_PLAYERS ? lobby : null;
     },
     leave(lobby) {
-      if (lobby.players.size) return;
+      if (lobby.occupancy) return; // players here or in its layer worlds
       setTimeout(() => {
-        if (lobby.players.size || byCode.get(lobby.party) !== lobby) return;
+        if (lobby.occupancy || byCode.get(lobby.party) !== lobby) return;
         lobby.close();
         byCode.delete(lobby.party);
       }, EMPTY_GRACE_MS);

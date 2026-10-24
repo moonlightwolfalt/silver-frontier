@@ -15,7 +15,8 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { findClientChunk, loadClient } from "./client-runtime.js";
 import { REGIONS } from "./regions.js";
-import { generateWorld, worldFromRecording, STYLED_FOODS } from "./world.js";
+import { generateWorld, generateLayerWorld, worldFromRecording, STYLED_FOODS } from "./world.js";
+import { CUSTOM, layerOfBiome } from "./custom-biomes.js";
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
@@ -293,6 +294,12 @@ export function decodeCapture(capture) {
 
 // ---------- lobby ----------
 
+// The client only knows how to colour its own five biomes, so the custom ones (swamp, the layers)
+// travel as land.
+const wireBiome = (name) => (E[name] !== undefined && E[name] <= E.volcano ? E[name] : E.land);
+// Layer switches ride on a serverMessage the patched client intercepts (__cbLayerMessage).
+const LAYER_MESSAGE = "\u0001layer:";
+
 function biomeAt(x, y) {
   const b = pg.biomes;
   const inside = (r) => Math.abs(x - r.x) <= r.width / 2 && Math.abs(y - r.y) <= r.height / 2;
@@ -303,17 +310,20 @@ function biomeAt(x, y) {
 }
 
 export class Lobby {
-  constructor(region, { mode = "FFA", party = null } = {}) {
+  constructor(region, { mode = "FFA", party = null, layer = "surface", base = null } = {}) {
     this.region = region;
     this.mode = mode;
     this.party = party; // party code for private party lobbies
+    this.layer = layer; // "surface", or a layer world: underground, sky, space (custom-biomes.js)
+    this.base = base; // a layer world's surface lobby
+    this.layers = new Map(); // a surface lobby's layer worlds, made when first entered
     this.players = new Set();
     this.nextId = 1;
     this.freeIds = []; // ids of removed entities, reused so ids stay small (animals sync 14-bit ids)
     this.entities = new Map(); // world objects and foods, by id
     this.moving = new Set(); // shot or kicked pumpkins still rolling
     this.goalShows = new Map(); // hole id -> goal display being shown
-    this.seed = [...(party ?? region.id)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+    this.seed = [...(party ?? region.id) + (layer === "surface" ? "" : layer)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
     this.rand = (() => { let x = this.seed; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32); })();
     this.buildWorld();
     this.ticks = 0;
@@ -327,7 +337,7 @@ export class Lobby {
     const x = at?.x ?? area.x + (this.rand() - 0.5) * (area.width - 300);
     const y = at?.y ?? area.y + (this.rand() - 0.5) * (area.height - 300);
     return this.addEntity({
-      type: "pumpkin", species: 0, subspecies: variant, biome: E[biomeAt(x, y)], x, y, size: 60, angle: this.rand() * Math.PI * 2,
+      type: "pumpkin", species: 0, subspecies: variant, biome: E[this.biomeAt(x, y)], x, y, size: 60, angle: this.rand() * Math.PI * 2,
     }, announce);
   }
 
@@ -348,7 +358,10 @@ export class Lobby {
 
   // The map recorded from mope.io (data/map.json) when there is one, otherwise a generated world.
   buildWorld() {
-    const { entities, volcano } = recordedMap ? worldFromRecording(recordedMap, pg) : generateWorld({ pg, E, D, cm, pm, sg, seed: this.seed });
+    const { entities, volcano } =
+      this.layer !== "surface" ? generateLayerWorld({ layer: this.layer, pg, E, D, cm, pm, sg, seed: this.seed })
+      : recordedMap ? worldFromRecording(recordedMap, pg)
+      : generateWorld({ pg, E, D, cm, pm, sg, seed: this.seed });
     this.volcano = volcano;
     for (const e of entities) this.addEntity(e, false);
     this.holes = entities.filter((e) => e.type === "hole");
@@ -357,7 +370,77 @@ export class Lobby {
     this.terrainZones = entities
       .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
       .sort((a, b) => (a.type === "island" ? -1 : 0) - (b.type === "island" ? -1 : 0)); // islands win over sea
-    for (let i = 0; i < PUMPKIN_COUNT; i++) this.spawnPumpkin(false);
+    if (this.layer === "surface") for (let i = 0; i < PUMPKIN_COUNT; i++) this.spawnPumpkin(false);
+  }
+
+  // ---------- layer worlds ----------
+
+  layerLobby(layer) {
+    let l = this.layers.get(layer);
+    if (!l) this.layers.set(layer, (l = new Lobby(this.region, { mode: this.mode, party: this.party, layer, base: this })));
+    return l;
+  }
+
+  // Players here and in this surface lobby's layer worlds.
+  get occupancy() {
+    return this.players.size + [...this.layers.values()].reduce((n, l) => n + l.players.size, 0);
+  }
+
+  biomeAt(x, y) {
+    return this.layer === "surface" ? biomeAt(x, y) : "land";
+  }
+
+  // Moves a player to another layer of this region (or party): clears the old world from their
+  // screen, switches the client's map, sends the new world, and brings their animal along, or
+  // spawns `slug` there. Returns the lobby they are now in.
+  transfer(p, layer, { slug, subspecies, at } = {}) {
+    const base = this.base ?? this;
+    const to = layer === "surface" ? base : base.layerLobby(layer);
+    const prev = p.animal;
+    slug ??= prev?.slug;
+    subspecies ??= prev?.subspecies ?? 0;
+    const kept = prev && { godMode: prev.godMode, speed: prev.speed };
+    this.unloadSlingshot(p);
+    p.flight = null;
+    p.cake = null;
+    p.cakeLayer = 0;
+    this.players.delete(p);
+    const gone = [...this.entities.keys(), ...[...this.players].filter((o) => o.animal).map((o) => o.animal.id)];
+    if (prev) {
+      this.broadcast(updateMessage([["destroyEntity", [encode("destroyEntity", { hasKiller: false, id: prev.id })]]]));
+      this.freeIds.push(prev.id);
+      gone.push(prev.id);
+    }
+    for (let i = 0; i < gone.length; i += 400)
+      p.ws.send(updateMessage([["destroyEntity", gone.slice(i, i + 400).map((id) => encode("destroyEntity", { hasKiller: false, id }))]]));
+    p.animal = null;
+    p.lobby = to;
+    to.players.add(p);
+    to.serverMessage(p, LAYER_MESSAGE + layer);
+    to.sendWorld(p);
+    if (slug) {
+      to.spawn(p, slug, subspecies, { at, redirect: false });
+      if (kept) Object.assign(p.animal, kept);
+    }
+    p.portalReadyAt = Date.now() + 2500;
+    to.serverMessage(p, layer === "surface" ? "Back on the surface." : layer === "space" ? "Welcome to Space!" : `Welcome to the ${CUSTOM.biomes[layer].name}!`);
+    return to;
+  }
+
+  // Portals: tunnel holes, the sky's top edge. True when the player has left this lobby.
+  portalStep(p, now) {
+    if (now < (p.portalReadyAt ?? 0)) return false;
+    const a = p.animal;
+    for (const h of this.holes)
+      if (h.portal && Math.hypot(a.x - h.x, a.y - h.y) < h.size / 2) {
+        this.transfer(p, h.portal, { at: { x: Math.min(MAP.x - 100, a.x + 180), y: a.y } });
+        return true;
+      }
+    if (this.layer === "sky" && a.y < 220) {
+      this.transfer(p, "space", { at: { x: a.x, y: MAP.y - 400 } });
+      return true;
+    }
+    return false;
   }
 
   // Swaps in a new map for everyone here: clears the old world from their screens, then sends
@@ -413,8 +496,10 @@ export class Lobby {
   makeAnimal(p, slug, subspecies = 0, at) {
     const cfg = M[slug];
     const home = cfg.animalResource?.type === 1 ? "volcano" : cfg.biome;
+    const custom = CUSTOM.biomes[home];
     const spawn = at ?? (home === "volcano" ? this.volcano
       : home === "ocean" ? pg.biomes.leftOcean
+      : custom?.kind === "layer" ? { x: MAP.x / 2 + (this.rand() - 0.5) * 2000, y: MAP.y / 2 + (this.rand() - 0.5) * 2000 }
       : pg.biomes[home] ?? pg.biomes.land);
     return {
       type: "animal",
@@ -422,8 +507,8 @@ export class Lobby {
       slug, subspecies,
       species: T[slug],
       tier: Lr.findIndex((t) => t.animals.includes(T[slug])) + 1,
-      biome: E[home] ?? E.land,
-      biomeHere: E[home] ?? E.land,
+      biome: wireBiome(home),
+      biomeHere: wireBiome(home),
       size: cfg.minimumSize,
       x: spawn.x, y: spawn.y, angle: 0,
       name: p.name,
@@ -435,11 +520,15 @@ export class Lobby {
     };
   }
 
-  spawn(p, slug, subspecies = 0) {
+  // `redirect`: an animal from another layer's biome is spawned in that layer (picking a sky
+  // animal takes you to the sky); portals turn it off to bring any animal along.
+  spawn(p, slug, subspecies = 0, { at = null, redirect = true } = {}) {
+    const layer = layerOfBiome(M[slug].biome);
+    if (redirect && layer !== this.layer) return this.transfer(p, layer, { slug, subspecies });
     const prev = p.animal;
     this.unloadSlingshot(p);
     p.flight = null;
-    p.animal = this.makeAnimal(p, slug, subspecies, prev && { x: prev.x, y: prev.y });
+    p.animal = this.makeAnimal(p, slug, subspecies, at ?? (prev && { x: prev.x, y: prev.y }));
     p.target = { x: p.animal.x, y: p.animal.y };
     p.animal.size = this.targetSize(p); // a new animal starts at the size its XP calls for
     this.broadcast(
@@ -572,7 +661,7 @@ export class Lobby {
         return e.type === "mud" ? "mud" : "water";
       }
     }
-    return biomeAt(x, y) === "ocean" ? "water" : "land";
+    return this.biomeAt(x, y) === "ocean" ? "water" : "land";
   }
 
   // Movement, from the client's own animal data:
@@ -601,7 +690,7 @@ export class Lobby {
     a.y = Math.min(MAP.y, Math.max(0, a.y + a.vy * dt));
     // the client's angle is the facing direction on screen (0 = right, clockwise, y down)
     if (Math.hypot(a.vx, a.vy) > 15) a.angle = (Math.atan2(a.vy, a.vx) + 2 * Math.PI) % (2 * Math.PI);
-    a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[biomeAt(a.x, a.y)];
+    a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[this.biomeAt(a.x, a.y)];
     this.eat(p);
   }
 
@@ -787,10 +876,12 @@ export class Lobby {
     for (const p of this.players) {
       const a = p.animal;
       if (!a) continue;
-      if (p.flight) this.fly(p, now);
-      else {
+      if (p.flight) {
+        if (this.fly(p, now)) continue; // flung into the sky
+      } else {
         this.move(p, dt);
         this.slingshotStep(p, now, pumpkins);
+        if (!p.sling && this.portalStep(p, now)) continue;
       }
       this.cakeStep(p, now);
       // ease toward the size XP calls for, so growing and shrinking animate
@@ -921,7 +1012,7 @@ export class Lobby {
     const distance = 700 + 2600 * power;
     const ms = 700 + 1100 * power;
     p.flight = {
-      x0: a.x, y0: a.y, t0: now, ms,
+      x0: a.x, y0: a.y, t0: now, ms, toSky: power >= 0.85 && this.layer === "surface", // a near-full pull reaches the sky
       x1: Math.min(MAP.x - 50, Math.max(50, a.x + Math.cos(sling.angle) * distance)),
       y1: Math.min(MAP.y - 50, Math.max(50, a.y + Math.sin(sling.angle) * distance)),
     };
@@ -940,11 +1031,15 @@ export class Lobby {
     const k = 1 - (1 - t) ** 2; // fast off the band, easing into the landing
     a.x = f.x0 + (f.x1 - f.x0) * k;
     a.y = f.y0 + (f.y1 - f.y0) * k;
-    a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[biomeAt(a.x, a.y)];
-    if (t < 1) return;
+    a.biomeHere = Math.hypot(a.x - this.volcano.x, a.y - this.volcano.y) < this.volcano.r ? E.volcano : E[this.biomeAt(a.x, a.y)];
+    if (t < 1) return false;
+    const toSky = f.toSky;
     p.flight = null;
     a.flying = false;
     p.target = { x: a.x, y: a.y };
+    if (!toSky) return false;
+    this.transfer(p, "sky", { at: { x: a.x, y: a.y } });
+    return true;
   }
 
   // Lets go of a loaded slingshot without firing (the animal left, died or changed).
@@ -961,6 +1056,7 @@ export class Lobby {
   close() {
     clearInterval(this.timer);
     this.timer = null;
+    for (const l of this.layers.values()) l.close();
   }
 }
 
@@ -975,7 +1071,8 @@ export function createGameServer({ accounts, records = null, parties, map = null
     noServer: true,
     handleProtocols: (protocols) => (protocols.has("mope.session") ? "mope.session" : false),
   });
-  const allPlayers = () => [...lobbies.values(), ...parties.lobbies()].flatMap((l) => [...l.players]);
+  const allLobbies = () => [...lobbies.values(), ...parties.lobbies()].flatMap((l) => [l, ...l.layers.values()]);
+  const allPlayers = () => allLobbies().flatMap((l) => [...l.players]);
 
   function lobbyFor(regionId) {
     return lobbies.get(regionId);
@@ -989,7 +1086,7 @@ export function createGameServer({ accounts, records = null, parties, map = null
     const gone = [...from.entities.keys(), ...[...from.players].filter((o) => o.animal).map((o) => o.animal.id)];
     for (let i = 0; i < gone.length; i += 400)
       p.ws.send(updateMessage([["destroyEntity", gone.slice(i, i + 400).map((id) => encode("destroyEntity", { hasKiller: false, id }))]]));
-    if (from.party) parties.leave(from);
+    if (from.party) parties.leave(from.base ?? from);
     p.lobby = to;
     to.players.add(p);
     p.ws.send(encode("init", { inviteID: to.party ?? "", version: PROTOCOL_VERSION }));
@@ -1102,7 +1199,7 @@ export function createGameServer({ accounts, records = null, parties, map = null
       ws.on("close", () => {
         p.lobby.despawn(p, false);
         p.lobby.players.delete(p);
-        if (p.lobby.party) parties.leave(p.lobby);
+        if (p.lobby.party) parties.leave(p.lobby.base ?? p.lobby);
       });
     });
   }
@@ -1120,7 +1217,7 @@ export function createGameServer({ accounts, records = null, parties, map = null
   return {
     accept,
     relink,
-    stats: () => Object.fromEntries([...lobbies].map(([id, l]) => [id, l.playerCount])),
+    stats: () => Object.fromEntries([...lobbies].map(([id, l]) => [id, l.playerCount + [...l.layers.values()].reduce((n, x) => n + x.playerCount, 0)])),
     lobbies,
     // Switches every lobby to a recorded map (or back to generated worlds with null).
     setMap(map) {
