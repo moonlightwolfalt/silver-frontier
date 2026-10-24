@@ -306,6 +306,10 @@ an allowed email before the site loads (free for up to 50 users).
   region and party, and are saved in `data/records.json`. Signed-in players are tracked by
   account, guests by name. `/top` prints the all-time leaders in chat. `tools/make-pumpkins.py` builds their textures from ruby's 5
   rolling frames and the artwork in `custom-assets/source/`.
+- **Action menu (⚔️, left edge):** one tap for the commands that are hard to type on a phone:
+  **1v1 the nearest** tier 15+ animal, **Join tournament**, **Tournament**, **My rank**, **Team**,
+  **World records** and **Commands**. Replies show in chat as usual. `/1v1` with no name does the
+  same as the first button.
 - **Sandbox buttons and keys:** the on-screen **▲ Upgrade** / **▼ Downgrade** buttons (right
   side, shown while playing on a local server) and the **Up**/**Down** keys step the upgrade menu through all 17 tiers, from Mouse to
   Black/King Dragon. Click an animal, or press its number key (the keys reach the first nine

@@ -30,7 +30,7 @@ const COMMANDS = {
   tournament: { role: 0, usage: "/tournament [open <4|8|16> [prize XP] | start | cancel]  (staff run it; anyone can check it)", run: tournamentCommand },
   join: { role: 0, usage: "/join  (enter the open tournament)", run: tournamentJoin },
   team: { role: 0, usage: "/team  (your team and the team scores)", run: teamCommand },
-  "1v1": { role: 0, usage: "/1v1 <player>  (send a 1v1 request; tier 15+)", run: duel },
+  "1v1": { role: 0, usage: "/1v1 [player]  (send a 1v1 request; tier 15+; no name: the nearest)", run: duel },
   rank: { role: 0, usage: "/rank  (your ranked 1v1 rating)", run: rank },
   bots: { role: 4, usage: "/bots <n>  (how many AI animals this world has)", run: bots },
   event: { role: 4, usage: "/event <double|meteors|pumpkins|boss>  (start a world event)", run: event },
@@ -156,9 +156,14 @@ function face(ctx, [deg]) {
   ctx.player.target = { x: a.x, y: a.y };
 }
 
-function duel(ctx, [name]) {
-  const q = [...ctx.lobby.players].find((o) => o.animal && o.name.toLowerCase() === String(name ?? "").toLowerCase());
-  if (!q) throw new Error(`no player "${name}" here`);
+function duel(ctx, args) {
+  const me = ctx.player.animal, name = args.join(" ").toLowerCase();
+  const here = [...ctx.lobby.players].filter((o) => o.animal && o !== ctx.player && !o.arena);
+  // No name (the action menu's button): the nearest tier 15+ animal.
+  const q = name
+    ? here.find((o) => o.name.toLowerCase() === name) ?? here.find((o) => o.name.toLowerCase().includes(name))
+    : me && here.filter((o) => o.animal.tier >= 15).sort((a, b) => Math.hypot(a.animal.x - me.x, a.animal.y - me.y) - Math.hypot(b.animal.x - me.x, b.animal.y - me.y))[0];
+  if (!q) throw new Error(name ? `no player "${name}" here` : "nobody tier 15+ to challenge here");
   arenaRequest(ctx.lobby, ctx.player, q.animal.id);
 }
 

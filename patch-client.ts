@@ -98,6 +98,77 @@ globalThis.localtest = {
     box.style.display = show ? \`flex\` : \`none\`;
   }, 250);
 })();
+// Action menu (left edge): one tap for the chat commands phones can't easily type, such as 1v1s,
+// tournaments, ranked and teams. The server's reply shows in chat as usual.
+(function actionMenu() {
+  if (typeof document === \`undefined\`) return;
+  let style = document.createElement(\`style\`);
+  style.textContent = \`
+    #sfActions{position:fixed;left:12px;top:50%;transform:translateY(-50%);z-index:50;display:none;align-items:center;gap:8px}
+    #sfActions>button,#sfActionList button{border:0;font:700 14px Rubik,system-ui,sans-serif;color:#fff;cursor:pointer;
+      touch-action:manipulation;user-select:none;box-shadow:inset 0 -4px 0 #0007,0 2px 6px #0004}
+    #sfActions>button{width:52px;height:52px;border-radius:50%;background:#2d6bc4;font-size:24px}
+    #sfActions>button[aria-expanded=true]{background:#1d4580}
+    #sfActionList{display:none;flex-direction:column;gap:6px}
+    #sfActions>button[aria-expanded=true]+#sfActionList{display:flex}
+    #sfActionList button{padding:9px 12px;border-radius:12px;background:#2d6bc4;text-align:left;white-space:nowrap}
+    #sfActions button:active{transform:translateY(2px);box-shadow:inset 0 -2px 0 #0007}
+    #sfActions button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+    @media (max-width:600px),(max-height:500px){
+      #sfActions>button{width:44px;height:44px;font-size:20px}
+      #sfActionList button{padding:7px 10px;font-size:13px}
+      #sandboxButtons button{min-width:0;padding:7px 10px;font-size:13px}}
+    @media (max-height:500px){#sandboxButtons{flex-direction:row;top:44%}}\`;
+  let box = document.createElement(\`div\`);
+  box.id = \`sfActions\`;
+  let toggle = document.createElement(\`button\`);
+  toggle.type = \`button\`;
+  toggle.textContent = \`⚔️\`;
+  toggle.title = \`Actions: 1v1, tournaments, rank, team\`;
+  toggle.setAttribute(\`aria-label\`, toggle.title);
+  toggle.setAttribute(\`aria-expanded\`, \`false\`);
+  toggle.setAttribute(\`aria-controls\`, \`sfActionList\`);
+  let list = document.createElement(\`div\`);
+  list.id = \`sfActionList\`;
+  let actions = [
+    [\`⚔️ 1v1 the nearest\`, \`/1v1\`],
+    [\`🏆 Join tournament\`, \`/join\`],
+    [\`📋 Tournament\`, \`/tournament\`],
+    [\`📈 My rank\`, \`/rank\`],
+    [\`👥 Team\`, \`/team\`],
+    [\`🌍 World records\`, \`/top\`],
+    [\`❔ Commands\`, \`/help\`],
+  ];
+  let shield = (b) => {
+    for (let ev of [\`pointerdown\`, \`mousedown\`, \`touchstart\`, \`pointerup\`, \`mouseup\`, \`touchend\`])
+      b.addEventListener(ev, (e) => e.stopPropagation(), { passive: !0 });
+  };
+  let open = (yes) => toggle.setAttribute(\`aria-expanded\`, String(yes));
+  shield(toggle);
+  toggle.addEventListener(\`click\`, (e) => {
+    (e.stopPropagation(), open(toggle.getAttribute(\`aria-expanded\`) !== \`true\`), toggle.blur());
+  });
+  for (let [label, chat] of actions) {
+    let b = document.createElement(\`button\`);
+    b.type = \`button\`;
+    b.textContent = label;
+    shield(b);
+    b.addEventListener(\`click\`, (e) => {
+      e.stopPropagation();
+      $.player && $.network?.send(\`chatMessage\`, { chat });
+      (open(!1), b.blur());
+    });
+    list.appendChild(b);
+  }
+  box.append(toggle, list);
+  let mount = () => (document.head.appendChild(style), document.body.appendChild(box));
+  document.body ? mount() : window.addEventListener(\`DOMContentLoaded\`, mount);
+  setInterval(() => {
+    let show = !!$?.player && String($.network?.server?.regionId ?? \`\`).startsWith(\`local-\`);
+    box.style.display = show ? \`flex\` : \`none\`;
+    show || open(!1);
+  }, 250);
+})();
 // Custom biomes: classes for the new animals and foods (built once, on first use), and switching
 // the map between the surface and the layer worlds when the server says so.
 function __cbAnimal(n) {
