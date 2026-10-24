@@ -16,6 +16,7 @@ import { PUMPKINS, PUMPKIN_COLOURS } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
 import { CUSTOM } from "./custom-biomes.js";
 import { MODE_LIST } from "./mode-list.js";
+import { CUSTOM_ACHIEVEMENTS } from "./progress.js";
 
 const dir = process.argv[2] ?? "mope-dump/site/mope.io";
 const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith(".js")).map((f) => join(dir, f));
@@ -204,6 +205,8 @@ const edits: [string, string, string?][] = [
     "async function Pf(e) {\n  let t = pr(e) ? e : `en`,",
     "async function Pf(e) {\n  let __sf = await globalThis.__sfChangelog?.();\n  if (__sf?.versions?.length) return __sf;\n  let t = pr(e) ? e : `en`,",
   ],
+  // Quests pay coins here, not pass XP.
+  ["xpReward: `{xp, number} XP`,", "xpReward: `{xp, number} coins`,"],
   // Layer switches (custom biomes) ride on serverMessage with a \u0001layer: prefix.
   ["w.on(`serverMessage`, function (e) {\n", "w.on(`serverMessage`, function (e) {\n  if (__cbLayerMessage(e)) return;\n"],
 ];
@@ -299,6 +302,12 @@ cbUpsert("var pg = {\n    scale: 1,\n    biomes: {\n", "pg", "\n" + biomeIds.fil
   const r = CUSTOM.biomes[id].area;
   return `      ${id}: { x: ${r.x}, y: ${r.y}, z: 2, width: ${r.width}, height: ${r.height} },\n`;
 }).join(""));
+// This server's achievements (progress.js) join the client's list (X_) and its names.
+cbUpsert("var X_ = [\n", "X_", "\n" + CUSTOM_ACHIEVEMENTS.map((a: any) =>
+  `    { id: ${tick(a.id)}, tier: ${tick(a.tier)}, metric: ${tick(a.metric)}, goal: ${a.goal}, scope: ${tick(a.scope)}, reward: { coins: ${a.reward.coins ?? 0}, gems: ${a.reward.gems ?? 0} } },\n`).join(""));
+cbUpsert("      first_bite: { name: `First Bite`, description: `Eat another player.` },\n", "achNames", CUSTOM_ACHIEVEMENTS.map((a: any) =>
+  `      ${a.id}: { name: ${tick(a.name)}, description: ${tick(a.description)} },\n`).join(""));
+
 // Each tier's animals in Lr gain that tier's custom animals.
 {
   const anchor = "\n  Lr = [\n";

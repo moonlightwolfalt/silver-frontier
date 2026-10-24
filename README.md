@@ -314,6 +314,18 @@ an allowed email before the site loads (free for up to 50 users).
   requirement, so the XP bar and size match the animal. Picking a lower one keeps your XP, and
   the automatic upgrade menu waits until you earn past a new tier.
 
+## Quests and achievements
+
+The menu's **Achievements** tab tracks the client's 37 mope.io achievements plus 10 of this
+server's own (Spelunker, Head in the Clouds, Starborn, Boss Slayer, Last One Standing, Champion,
+Gold Rank, Champion Rank, Cake King, New Horizons). Unlocking one shows the game's toast and pays
+its coins or gems straight into your wallet.
+
+The **Quests** tab gives each signed-in player 3 daily and 3 weekly quests (eat players, win
+1v1s, roll rares, score pumpkin goals, visit other worlds…), picked fresh each day and week.
+Each pays coins. Finishing all three dailies keeps your **daily streak** going, worth 25 coins
+a day, up to 250. Progress is kept with the accounts (`data/progress.json`, or the database).
+
 ## The real mope.io map
 
 mope.io's server decides where everything is, and it isn't in the client, so the map has to be

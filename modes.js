@@ -9,7 +9,7 @@
 //     fighters) shrinks over four minutes and hurts anyone outside; last animal standing wins.
 //   - TEAMS: Red and Blue, names in team colours, no friendly fire, team scores announced.
 //   - SANDBOX: nobody can be hurt, the water bar doesn't drain, nothing counts for the boards.
-import { MAP, E, Lr, DEATH, encode, record, updateMessage, writeArenaSync, getRecords } from "./game-server.js";
+import { MAP, E, Lr, DEATH, encode, record, updateMessage, writeArenaSync, getRecords, getProgress } from "./game-server.js";
 
 export { MODE_LIST, MODE_BY_SLUG } from "./mode-list.js";
 
@@ -105,6 +105,7 @@ export class Arena {
     if (winner) {
       winner.wins = (winner.wins ?? 0) + 1;
       if (winner.animal) winner.animal.wins = winner.wins;
+      getProgress()?.arenaWin(winner);
       const bonus = this.kind === "casual" && winner.animal ? this.lobby.foodXP(winner.animal) * 5 : 0;
       if (bonus) (winner.xp += bonus), this.lobby.sendXP(winner);
       this.lobby.giveCoins(winner, this.kind === "ranked" ? 20 : this.kind === "casual" ? 10 : 0, "1v1");
@@ -184,6 +185,7 @@ function rankedResult(lobby, p1, p2, winner) {
   for (const [p, before, delta] of [[p1, r1, d], [p2, r2, -d]]) {
     const after = Math.max(0, before + delta);
     if (!p.bot) records?.setRating(p, after);
+    getProgress()?.rating(p, after);
     p.rankedReadyAt = Date.now() + 3000;
     if (lobby.players.has(p))
       lobby.serverMessage(p, `${winner === p ? "Victory!" : winner ? "Defeat." : "Draw."} Rating ${after} (${delta >= 0 ? "+" : ""}${delta}) · ${rankOf(after)}`);
@@ -228,6 +230,7 @@ function tournamentDone(lobby, champion) {
   lobby.checkProgress(champion);
   if (!champion.bot) getRecords()?.addCount("tournament_wins", champion);
   lobby.giveCoins(champion, 200, "tournament");
+  getProgress()?.tournamentWin(champion);
   tell(lobby, `🏆 ${champion.name || "Someone"} won the tournament!${t.prize ? ` +${fmt(t.prize)} XP` : ""}`);
 }
 
@@ -336,6 +339,7 @@ function brStep(lobby, now, out) {
         winner.wins = (winner.wins ?? 0) + 1;
         if (!winner.bot) getRecords()?.addCount("br_wins", winner);
         lobby.giveCoins(winner, 50, "br");
+        getProgress()?.brWin(winner);
         winner.xp += lobby.foodXP(winner.animal) * 20;
         lobby.sendXP(winner);
       }

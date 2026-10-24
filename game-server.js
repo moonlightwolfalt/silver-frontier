@@ -45,6 +45,7 @@ const [Ot, c_, gt, T, M, Lr, E, gC, pg, Le, D, cm, pm, sg, nr] =
 const Writer = client.get("lt");
 const FOOD_TIERS = client.get("Ul");
 const NAMES = client.get("vi"); // the client's English animal names and ability names
+export const CLIENT_ACHIEVEMENTS = client.get("X_"); // the client's achievement list (with ours, once patched)
 const Reader = client.get("x");
 const config = loadClient(findClientChunk(CLIENT_DIR, "protocolVersion:"));
 export const PROTOCOL_VERSION = config.get("c").protocolVersion;
@@ -57,6 +58,9 @@ export const getRecords = () => recordsRef;
 
 let accountsRef = null; // set by createGameServer, used for equipped skins
 let recordsRef = null; // set by createGameServer: worldwide most-XP and pumpkin-goal records
+let progressRef = null; // set by createGameServer: achievements and quests (progress.js)
+export const getProgress = () => progressRef;
+const track = (event, ...args) => progressRef?.[event]?.(...args);
 
 const clientMessages = Object.fromEntries(Object.entries(s_).map(([name, s]) => [s.encoder, name]));
 export const MAP = { x: 0, y: 0 };
@@ -523,6 +527,7 @@ export class Lobby {
       if (kept) Object.assign(p.animal, kept);
     }
     p.portalReadyAt = Date.now() + 2500;
+    if (layer !== "surface") track("layer", p, layer);
     to.serverMessage(p, layer === "surface" ? "Back on the surface." : layer === "space" ? "Welcome to Space!" : `Welcome to the ${CUSTOM.biomes[layer].name}!`);
     return to;
   }
@@ -663,6 +668,7 @@ export class Lobby {
       type: "animal",
       id: p.animal?.id ?? this.allocId(),
       slug, subspecies,
+      subspeciesName: M[slug].subspeciesEnum?.[subspecies] ?? "",
       species: T[slug],
       tier: tierOf(slug),
       biome: wireBiome(home),
@@ -768,6 +774,7 @@ export class Lobby {
     const b = p.animal;
     if (!b || (q && !this.canHurt(p, q, now)) || (!q && (b.godMode || now < (b.immuneUntil ?? 0)))) return;
     b.health = (b.health ?? 100) - damage * (b.shieldMultiplier ?? 1);
+    p.hurtThisLife = true;
     b.hurtAt = now;
     const a = q?.animal;
     if (a) {
@@ -804,6 +811,7 @@ export class Lobby {
       });
       setTimeout(() => this.timer && this.entities.get(e.id) === e && this.removeEntity(e.id), 60_000);
     }
+    if (a) (a.biomeName = E[a.biomeHere]), track("kill", q, p, "bite");
     onGone(this, p);
     this.despawn(p, true, { cause, killer: a ? q : null });
   }
@@ -866,6 +874,13 @@ export class Lobby {
     }
   }
 
+  // The client's "Achievement unlocked" toast.
+  toast(p, def) {
+    p.ws.send(updateMessage([["serverMessage", [encode("serverMessage", {
+      message: "progression:achievements.unlockedToast", translate: true, translateParams: JSON.stringify({ name: def.id }),
+    })]]]));
+  }
+
   // Everyone in this region's lobby and its layer worlds.
   allHere() {
     return [this, ...this.layers.values()].flatMap((l) => [...l.players]);
@@ -875,6 +890,7 @@ export class Lobby {
   giveCoins(p, n, why) {
     if (!n || p.bot || this.mode === "SANDBOX") return;
     p.coinsEarned = (p.coinsEarned ?? 0) + n;
+    track("coins", p, n);
     p.ws.send(updateMessage([["coins", [encode("coins", { coins: p.coinsEarned })]]]));
     if (p.account && accountsRef) {
       const acc = accountsRef.get(p.account.id);
@@ -1073,10 +1089,13 @@ export class Lobby {
       const name = NAMES[slug]?.subspecies?.[form.toLowerCase().replace(/ /g, "_")] ?? `${form} ${NAMES[slug]?.name ?? slug}`;
       for (const o of (this.base ?? this).allHere()) this.serverMessage(o, `✨ ${p.name || "Someone"} got a rare ${name}!`);
       if (!p.bot) recordsRef?.addCount("rare_finds", p);
+      track("rare", p, slug, M[slug].subspeciesEnum?.[subspecies] ?? "");
       this.giveCoins(p, 25, "rare");
     }
     this.spawn(p, slug, subspecies);
     p.autoFloor = sandbox ? this.earnedTier(p) : 0;
+    if (p.animal) track("tier", p, p.animal, { sandbox: sandbox || !!p.sandboxedLife, seconds: (Date.now() - (p.spawnedAt ?? Date.now())) / 1000, hurt: !!p.hurtThisLife });
+    if (sandbox) p.sandboxedLife = true; // a life that used the sandbox doesn't count for the speedrun ones
     this.checkProgress(p);
   }
 
@@ -1103,6 +1122,7 @@ export class Lobby {
       if (range && (a.tier < range.minimumTier || a.tier > range.maximumTier)) continue;
       this.removeEntity(e.id);
       p.xp += this.foodXP(a) * (Date.now() < (this.xpBoostUntil ?? 0) ? 2 : 1); // double XP event
+      track("food", p, D[e.species]);
       a.resource = Math.min(100, (a.resource ?? 100) + (JUICY[D[e.species]] ?? 2) + (CUSTOM.biomes[this.configOf(a).biome] ? 4 : 0));
       this.sendXP(p);
       this.checkProgress(p);
@@ -1151,6 +1171,7 @@ export class Lobby {
     if (!p?.animal || !this.players.has(p)) return;
     const xp = pumpkinXP(e.subspecies, p.animal.tier, Lr.length);
     p.goals = (p.goals ?? 0) + 1;
+    track("goal", p, PUMPKINS[e.subspecies].id);
     this.giveCoins(p, 5, "goal");
     const total = (!p.bot && recordsRef?.addGoal(p)) || p.goals;
     p.xp += xp;
@@ -1254,6 +1275,8 @@ export class Lobby {
       if (!p.animal) continue;
       this.terrainStep(p, now);
       if (!p.animal) continue;
+      (p.biomesVisited ??= new Set()).add(`${this.layer}:${a.biomeHere}`);
+      if (this.ticks % 100 === 0) track("alive", p, (now - (p.spawnedAt ?? now)) / 1000, p.biomesVisited.size);
       this.cakeStep(p, now);
       // ease toward the size XP calls for, so growing and shrinking animate
       const target = this.targetSize(p) * (1 + CAKE_GROWTH * (p.cakeLayer ?? 0));
@@ -1316,6 +1339,7 @@ export class Lobby {
       if (king) {
         king.kingXPAt = now + CAKE_KING_MS;
         this.serverMessage(king, "You're king of the cake! Hold the top layer to earn XP.");
+        track("cakeKing", king);
       }
     }
     if (king && now >= king.kingXPAt) {
@@ -1433,9 +1457,10 @@ export class Lobby {
 
 // ---------- server ----------
 
-export function createGameServer({ accounts, records = null, parties, map = null }) {
+export function createGameServer({ accounts, records = null, progress = null, parties, map = null }) {
   accountsRef = accounts;
   recordsRef = records;
+  progressRef = progress;
   recordedMap = map;
   const lobbies = new Map(REGIONS.map((r) => [r.id, new Lobby(r)]));
   const BOTS = Math.max(0, Number(process.env.BOTS ?? 8));
@@ -1498,6 +1523,9 @@ export function createGameServer({ accounts, records = null, parties, map = null
         p.xp = 0;
         p.kills = 0;
         p.coinsEarned = 0;
+        p.hurtThisLife = false;
+        p.sandboxedLife = false;
+        p.biomesVisited = new Set();
         p.shownResource = null;
         p.autoFloor = 0;
         p.fixedSize = null;

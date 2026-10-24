@@ -32,6 +32,8 @@ import { createRecords } from "./records.js";
 import { recorderPage } from "./map-recorder.js";
 import { createChangelog } from "./changelog.js";
 import { createStore } from "./store.js";
+import { createProgress, CUSTOM_ACHIEVEMENTS } from "./progress.js";
+import { CUSTOM as CUSTOM_BIOMES } from "./custom-biomes.js";
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -260,7 +262,7 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, async () => {
   console.log(`http://localhost:${PORT}${gate ? " (password protected)" : ""} · version ${VERSION}`);
   if (!fs.existsSync(path.join(SITE, "index.html"))) return console.log("client not fetched yet; run: bun run setup");
-  const [{ createGameServer, game: data, decodeCapture, recorderInfo }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
+  const [{ createGameServer, game: data, decodeCapture, recorderInfo, CLIENT_ACHIEVEMENTS }, { createParties }] = await Promise.all([import("./game-server.js"), import("./parties.js")]);
   const store = await createStore({ dataDir: DATA }); // files, or Postgres with DATABASE_URL
   let map = store.get("map");
   if (!map) try { map = JSON.parse(fs.readFileSync(MAP_FILE, "utf8")); } catch {}
@@ -273,9 +275,20 @@ server.listen(PORT, async () => {
     itemIds: await loadItemIds(),
     animalSlugs: Object.keys(data.M),
   });
+  // Achievements (the client's list, without ours that the patch added to it) and quests.
+  const ours = new Set(CUSTOM_ACHIEVEMENTS.map((a) => a.id));
+  const tierSlugs = (t) => data.Lr[t - 1].animals.map((s) => data.T[s]);
+  const progress = createProgress({
+    store, accounts,
+    clientAchievements: [...CLIENT_ACHIEVEMENTS].filter((a) => !ours.has(a.id)),
+    customSlugs: new Set(CUSTOM_BIOMES.animals.map((a) => a.slug)),
+    apexes: tierSlugs(15).filter((s) => !CUSTOM_BIOMES.animals.some((a) => a.slug === s)),
+    monsters: tierSlugs(16).filter((s) => !CUSTOM_BIOMES.animals.some((a) => a.slug === s)),
+  });
+  accounts.setProgress(progress);
   game = {
     store, accounts, map, decodeCapture, recorderInfo: recorderInfo(),
-    server: createGameServer({ accounts, records, parties: createParties(), map }),
+    server: createGameServer({ accounts, records, progress, parties: createParties(), map }),
   };
   // DOWNLOAD_ASSETS=0 skips the up-front download (hosts without a persistent disk); files are
   // then fetched from mope.io the first time the game asks for them.

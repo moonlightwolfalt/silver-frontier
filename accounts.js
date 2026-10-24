@@ -214,6 +214,9 @@ export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = 
       });
     });
 
+  let progress = null; // achievements and quests, set once progress.js is up
+  const setProgress = (p) => void (progress = p);
+
   async function handleApi(req, res, route, origin) {
     const method = req.method;
     const acc = fromRequest(req);
@@ -329,7 +332,11 @@ export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = 
       if (route === "/friends/pending") return json(res, 200, { received: [], sent: [] });
       if (route.startsWith("/notifications")) return json(res, 200, method === "GET" ? [] : { ok: true });
       if (route === "/passes/running") return json(res, 200, []);
-      if (route === "/quests/active") return json(res, 200, []);
+      // Quests and achievements (progress.js), for signed-in players.
+      if (route === "/quests/active") return json(res, 200, progress && acc ? progress.activeQuests(acc.id) : []);
+      if (progress && route.startsWith("/stats/achievements/global")) return json(res, 200, progress.globals());
+      if (progress && route.startsWith("/stats/achievements/me")) return json(res, 200, acc ? progress.achievementsOf(acc.id) : { achievements: [] });
+      if (progress && (m = route.match(/^\/stats\/achievements\/player\/([\w-]+)/))) return json(res, 200, progress.achievementsOf(m[1]));
       // Worldwide boards (records.js): most XP and pumpkin goals, for the menu Leaderboard.
       if (records && route.startsWith("/stats/catalogue")) return json(res, 200, records.catalogue());
       if (records && (m = route.match(/^\/stats\/board\/([\w-]+)(\/me)?(?:\?|$)/))) {
@@ -357,7 +364,7 @@ export function createAccounts({ dataDir, store = fileStore(dataDir), itemIds = 
   }
 
   return {
-    handleApi, fromRequest, findByEmail, get, update, ban, unban, isBanned, setBalance, ROLE,
+    handleApi, setProgress, fromRequest, findByEmail, get, update, ban, unban, isBanned, setBalance, ROLE,
     equippedSkin: (acc, animal) => (acc?.loadout ?? {})[animal] ?? "",
   };
 }
