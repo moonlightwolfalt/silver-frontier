@@ -1112,8 +1112,13 @@ export class Lobby {
     if (a.flying || a.fx?.hidden || a.fx?.shell || a.holeId) return; // nothing to eat in the air, underground, in a shell or a hole
     for (const e of this.entities.values()) {
       if (e.type === "pumpkin") {
-        // Pumpkins aren't food: touching one pushes it so it rolls, boosting kicks it hard.
-        if (Math.hypot(e.x - a.x, e.y - a.y) <= a.size / 2 + e.size / 2) this.kickPumpkin(p, e);
+        // Pumpkins aren't food: touching one picks it up (see carryStep), boosting kicks it hard.
+        const holder = this.holderOf(e);
+        if (holder === p || Math.hypot(e.x - a.x, e.y - a.y) > a.size / 2 + e.size / 2) continue;
+        const boosting = a.boostUntil > Date.now();
+        if (holder && !boosting) continue; // someone else has it; boost into it to knock it loose
+        if (boosting || p.bot || p.carrying || p.arena) this.kickPumpkin(p, e);
+        else this.carryPumpkin(p, e);
         continue;
       }
       if (e.type !== "food") continue;
@@ -1150,6 +1155,7 @@ export class Lobby {
   // so it never sits inside the animal. Whoever touched it last gets the goal.
   kickPumpkin(p, e) {
     const a = p.animal;
+    this.dropPumpkin(e);
     const dir = Math.atan2(e.y - a.y, e.x - a.x);
     const reach = a.size / 2 + e.size / 2 + 1;
     e.x = Math.min(MAP.x, Math.max(0, a.x + Math.cos(dir) * reach));
@@ -1159,6 +1165,63 @@ export class Lobby {
     if (Math.hypot(e.vx ?? 0, e.vy ?? 0) > speed && this.moving.has(e)) return; // already rolling faster
     Object.assign(e, { vx: Math.cos(dir) * speed, vy: Math.sin(dir) * speed, shooter: p, kicked: Date.now() });
     this.moving.add(e);
+  }
+
+  // Carrying: the pumpkin sits at the animal's nose and goes where it goes (carryStep, every
+  // tick). Boosting kicks it the way the animal faces; walking it into a hole scores. Like
+  // mope.io, carrying pays a little XP: full rate for the first minute, a quarter after that.
+  carryPumpkin(p, e) {
+    this.dropPumpkin(e);
+    this.moving.delete(e);
+    Object.assign(e, { carrier: p, carrierAnimal: p.animal, carriedSince: Date.now(), vx: 0, vy: 0, shooter: p, kicked: Date.now() });
+    p.carrying = e;
+  }
+
+  // Who's carrying this pumpkin, if they still are (not dead, gone or reborn).
+  holderOf(e) {
+    const c = e.carrier;
+    if (c && (!this.players.has(c) || c.animal !== e.carrierAnimal || c.carrying !== e)) this.dropPumpkin(e);
+    return e.carrier;
+  }
+
+  dropPumpkin(e, vx = 0, vy = 0) {
+    const p = e.carrier;
+    if (!p) return;
+    if (p.carrying === e) p.carrying = null;
+    e.carrier = e.carrierAnimal = null;
+    if (Math.hypot(vx, vy) >= 20) Object.assign(e, { vx, vy }), this.moving.add(e);
+  }
+
+  carryStep(p, now, syncs) {
+    const e = p.carrying, a = p.animal;
+    if (!e) return;
+    if (!this.entities.has(e.id) || e.carrier !== p) return void (p.carrying = null);
+    if (!a || a !== e.carrierAnimal || a.flying || a.holeId || a.fx?.hidden || a.fx?.shell || p.arena || p.sling)
+      return this.dropPumpkin(e, a?.vx ?? 0, a?.vy ?? 0);
+    if (a.boostUntil > now) {
+      // the kick: hard, straight ahead
+      this.dropPumpkin(e);
+      Object.assign(e, { vx: Math.cos(a.angle) * 1200, vy: Math.sin(a.angle) * 1200, shooter: p, kicked: now });
+      return void this.moving.add(e);
+    }
+    const x0 = e.x, y0 = e.y;
+    const reach = (a.size / 2 + e.size / 2) * 0.85;
+    e.x = Math.min(MAP.x, Math.max(0, a.x + Math.cos(a.angle) * reach));
+    e.y = Math.min(MAP.y, Math.max(0, a.y + Math.sin(a.angle) * reach));
+    e.angle = a.angle;
+    e.kicked = now; // a carried shot pumpkin doesn't time out
+    const hole = this.holes.find((h) => segmentDistance(h.x, h.y, x0, y0, e.x, e.y) <= h.size / 2);
+    if (hole) {
+      this.dropPumpkin(e);
+      return this.scoreGoal(e, hole);
+    }
+    syncs.push(record((w) => writePumpkinSync(w, e)));
+    if (this.ticks % 20 === 0) { // once a second
+      const rate = now - e.carriedSince < 60_000 ? 1 / 200 : 1 / 800;
+      p.xp += Math.max(1, Math.round(pumpkinXP(e.subspecies, a.tier, Lr.length) * rate));
+      this.sendXP(p);
+      this.checkProgress(p);
+    }
   }
 
   // A kicked or shot pumpkin that rolls into a hole is a goal for whoever sent it: the pumpkin's
@@ -1207,7 +1270,7 @@ export class Lobby {
         const t = o.animal;
         if (!t || o === e.shooter || Math.hypot(t.x - e.x, t.y - e.y) > t.size / 2 + e.size / 2) continue;
         const d = Math.hypot(e.vx, e.vy) || 1;
-        if (d < 600) continue; // slow ones are just pushed along (eat → kickPumpkin)
+        if (d < 600 || !e.shot) continue; // caught or pushed (eat); only /shoot cannonballs knock animals back
         t.x = Math.min(MAP.x, Math.max(0, t.x + (e.vx / d) * 120));
         t.y = Math.min(MAP.y, Math.max(0, t.y + (e.vy / d) * 120));
         o.target = { x: t.x, y: t.y };
@@ -1267,6 +1330,7 @@ export class Lobby {
       } else {
         if (!a.fx?.stunned && !a.fx?.web && !a.fx?.frozen) this.move(p, dt);
         this.slingshotStep(p, now, pumpkins);
+        this.carryStep(p, now, pumpkins);
         if (!p.sling && this.portalStep(p, now)) continue;
       }
       this.vitalsStep(p, dt, now);

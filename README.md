@@ -297,7 +297,10 @@ an allowed email before the site loads (free for up to 50 users).
   | Onyx | 0.2% | 2.5M |
 
   The bold ones are custom.
-- **Pumpkin goals:** push or kick a pumpkin, or `/shoot` one, into a hole. A goal gives
+- **Carrying pumpkins:** touch a pumpkin, even one that's rolling, to pick it up. It stays at
+  your nose wherever you go and pays a little XP each second (full rate for the first minute).
+  **Boost** to kick it hard the way you face. Someone boosting into it knocks it loose.
+- **Pumpkin goals:** carry or kick a pumpkin, or `/shoot` one, into a hole. A goal gives
   whoever touched it last the pumpkin's XP, a new one appears 30 s later, the hole shows "GOAAAAL!!!" and then the scorer's
   name, all-time goal count and bonus XP, and chat announces it.
 - **Leaderboards:** the in-game top 10 (top left) ranks everyone in your world by XP. The menu
