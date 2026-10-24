@@ -132,21 +132,30 @@ function writeAnimalSync(w, a) {
   w.writeBoolean(true); // size present
   w.writeBoolean(false); // hole changed
   if (a.tier >= 15) w.writeBoolean(false); // arena wins present
-  for (let i = 0; i < 7; i++) w.writeBoolean(false); // diving, healing, burning, frozen, bleeding, poisoned, stunned
-  w.writeBoolean(false); // stuck in web
-  w.writeBoolean(false); // constricted
-  for (let i = 0; i < 6; i++) w.writeBoolean(false); // shivering, sweating, aloed, under bush, ability1, low resource
-  w.writeBoolean(!!a.flying); // flung by a slingshot
+  const fx = a.fx ?? NO_FX;
+  for (const k of ["diving", "healing", "burning", "frozen", "bleeding", "poisoned", "stunned"]) w.writeBoolean(!!fx[k]);
+  w.writeBoolean(!!fx.web); // stuck in a web
+  if (fx.web) w.writeBits(0, 1); // web subspecies
+  w.writeBoolean(!!fx.constricted);
+  if (fx.constricted) w.writeBits(0, 3); // constrictor subspecies
+  for (let i = 0; i < 4; i++) w.writeBoolean(false); // shivering, sweating, aloed, under bush
+  w.writeBoolean(!!fx.ability1); // using its ability (the client plays the animal's own animation)
+  w.writeBoolean(!!fx.lowResource); // low water/lava
+  w.writeBoolean(!!a.flying); // flying (slingshot, flying abilities)
   if (a.skin) w.writeBoolean(false); // the client reads a boosting flag for animals with an equipped item
-  w.writeBoolean(true); // visible
-  w.writeBoolean(!!a.godMode); // spawn immunity (shown while god mode is on)
+  w.writeBoolean(!fx.hidden); // visible (burrowed animals are hidden)
+  w.writeBoolean(!!a.godMode || Date.now() < (a.immuneUntil ?? 0)); // spawn immunity
   w.writeBits(a.biomeHere, 3);
+  if (fx.frozen) w.writeBits(1, 2); // frozen by a shot
+  if (fx.bleeding) w.writeBoolean(false); // stink
   w.writeUint8(precision(a.angle, 2 * Math.PI, 8));
-  w.writeUint8(100); // health
+  w.writeUint8(Math.max(0, Math.min(100, Math.round(a.health ?? 100)))); // health
   w.writeUint16(precision(a.size, MAX_ANIMAL_SIZE, 16));
   if (M[T[a.species]].canClimbTree) w.writeBoolean(false); // in tree
   w.writeUint32(0); // padding for species-specific fields
 }
+
+const NO_FX = {};
 
 // position record for a moving pumpkin: 14-bit id, B.synchronize, then the pumpkin's angle and
 // size flags (Eg.synchronize).
@@ -168,6 +177,34 @@ function segmentDistance(px, py, ax, ay, bx, by) {
   const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
+
+// ---------- combat ----------
+// Who can eat whom is the client's own rule (W.canEat): a higher tier eats animals down to about
+// half its tier; ducks, snails, bees and frogs don't eat lower tiers; giraffes don't eat each
+// other. Tier 15+ animals can also bite the tail of their own tier. Bites take more health the
+// bigger the tier gap; health comes back slowly once you stop getting hurt.
+const NO_EATING_DOWN = new Set(["duck", "baby_duck", "angry_duck", "snail", "bee", "frog"]);
+const GIRAFFES = new Set(["giraffe", "momaffie", "girabie"]);
+export function canEatAnimal(a, b) {
+  if (a.tier > b.tier && NO_EATING_DOWN.has(a.slug)) return false;
+  if (GIRAFFES.has(a.slug) && GIRAFFES.has(b.slug)) return false;
+  return a.tier > b.tier && b.tier >= Math.floor((a.tier - 1) / 2 - 0.5);
+}
+const BITE_MS = 500; // between one animal's bites
+const SPAWN_IMMUNITY_MS = 3000;
+const REGEN_DELAY_MS = 4000;
+const REGEN_PER_S = 3;
+// The death screen's causes (the client's aC): killed by a player, by an animal, or ran dry.
+export const DEATH = { ENVIRONMENT: 0, PLAYER: 1, ANIMAL: 2, RESOURCE: 3 };
+
+// ---------- water / lava ----------
+// Every animal's bar (0-100) drains slowly and faster while boosting or flying. Water animals
+// refill in any water (lakes, ponds, the river, the sea); lava animals in the volcano and lava
+// pools; and every food tops it up a little, water-rich ones more. Empty, you lose health.
+const RESOURCE_DRAIN = 0.55; // per second
+const RESOURCE_REFILL = 14;
+const RESOURCE_HURT = 4; // health per second while empty
+const JUICY = { water: 25, watermelon: 12, watermelon_slice: 8, melon: 10, melon_slice: 6, lilypad: 8, kelp: 6, coconut: 8, sea_weed: 5, cactus: 6, aloevera: 6 };
 
 // Giant cake: layer edges as shares of its radius (the client's Vg.LAYERS), and per layer stood on:
 // size and view gained. The king of the hill gets 3 foods' worth of XP every 5 s. Party food comes
@@ -366,6 +403,7 @@ export class Lobby {
     for (const e of entities) this.addEntity(e, false);
     this.holes = entities.filter((e) => e.type === "hole");
     this.cakes = entities.filter((e) => e.type === "cake");
+    this.lavaPools = entities.filter((e) => e.type === "puddle" && e.species === pm.LAVA);
     this.slingshots = entities.filter((e) => e.type === "slingshot");
     this.terrainZones = entities
       .filter((e) => ["island", "mud", "lake", "puddle", "river"].includes(e.type) && !(e.type === "puddle" && e.species === pm.LAVA))
@@ -517,6 +555,9 @@ export class Lobby {
       hasAccount: !!p.account,
       godMode: p.animal?.godMode ?? false,
       speed: p.animal?.speed ?? 1,
+      health: 100,
+      resource: p.animal?.resource ?? 100,
+      immuneUntil: p.animal?.immuneUntil ?? 0,
     };
   }
 
@@ -541,20 +582,135 @@ export class Lobby {
     this.sendXP(p);
   }
 
-  despawn(p, stats = true) {
+  // Removes the player's animal. `stats` sends the death screen; `death` ({ cause, killer }) fills
+  // in who or what did it, and the client shows the killer eating the animal.
+  despawn(p, stats = true, death = null) {
     if (!p.animal) return;
     this.unloadSlingshot(p);
     p.flight = null;
     const id = p.animal.id;
     p.animal = null;
     this.freeIds.push(id);
-    this.broadcast(updateMessage([["destroyEntity", [encode("destroyEntity", { hasKiller: false, id })]]]));
+    const killer = death?.killer?.animal;
+    this.broadcast(updateMessage([["destroyEntity", [encode("destroyEntity", { hasKiller: !!killer, id, killer: killer?.id ?? 0 })]]]));
     if (stats)
       p.ws.send(encode("stopGameSession", {
-        xp: Math.min(MAX_XP, p.xp), timeAlive: Math.round((Date.now() - (p.spawnedAt ?? Date.now())) / 1000), kills: 0, wins: 0,
-        coinsEarned: 0, cause: 0, killerName: "", killerAnimal: 0, killerSubspecies: 0, killerSkin: "",
-        via: 0, viaId: 0, castByName: "", castByAnimal: 0,
+        xp: Math.min(MAX_XP, p.xp), timeAlive: Math.round((Date.now() - (p.spawnedAt ?? Date.now())) / 1000), kills: p.kills ?? 0, wins: p.wins ?? 0,
+        coinsEarned: 0, cause: death?.cause ?? DEATH.ENVIRONMENT,
+        killerName: killer ? death.killer.name || "Unnamed" : "", killerAnimal: killer?.species ?? 0, killerSubspecies: killer?.subspecies ?? 0,
+        killerSkin: killer?.skin ?? "", via: 0, viaId: 0, castByName: "", castByAnimal: 0,
       }));
+  }
+
+  // ---------- combat ----------
+
+  // Whether p's animal can be hurt by q's (q null for the environment) right now.
+  canHurt(p, q, now) {
+    const b = p.animal, a = q?.animal;
+    if (!b || b.godMode || now < (b.immuneUntil ?? 0) || b.flying || b.fx?.hidden || b.fx?.shell) return false;
+    if (!q) return true;
+    if (!a || a === b || a.flying || a.fx?.hidden) return false;
+    if (!!a.fx?.diving !== !!b.fx?.diving) return false; // divers only meet divers
+    if (this.mode === "SANDBOX") return false;
+    if (this.mode === "TEAMS" && p.team && p.team === q.team) return false;
+    if ((p.arena ?? null) !== (q.arena ?? null)) return false; // 1v1s are private
+    return true;
+  }
+
+  // Contact bites, every tick: predators bite prey they touch; tier 15+ bite same-tier tails.
+  combatStep(now) {
+    const fighters = [...this.players].filter((p) => p.animal && !p.animal.flying);
+    for (const q of fighters)
+      for (const p of fighters) {
+        const a = q.animal, b = p.animal;
+        if (!a || !b || a === b || now < (a.biteReadyAt ?? 0) || (a.fx?.stunned)) continue;
+        if (Math.hypot(a.x - b.x, a.y - b.y) > (a.size + b.size) / 2) continue;
+        let damage = 0;
+        if (canEatAnimal(a, b)) damage = Math.min(40, 12 + 4 * (a.tier - b.tier));
+        else if (a.tier >= 15 && a.tier === b.tier) {
+          const behind = Math.cos(b.angle) * (a.x - b.x) + Math.sin(b.angle) * (a.y - b.y) < 0;
+          if (behind) damage = 10;
+        }
+        if (!damage || !this.canHurt(p, q, now)) continue;
+        a.biteReadyAt = now + BITE_MS;
+        this.hurt(p, damage, q, now);
+      }
+  }
+
+  // Takes health from p (by q, or null for the environment). Knocks it back from its attacker.
+  hurt(p, damage, q, now, cause = q ? DEATH.PLAYER : DEATH.ENVIRONMENT) {
+    const b = p.animal;
+    if (!b || (q && !this.canHurt(p, q, now)) || (!q && (b.godMode || now < (b.immuneUntil ?? 0)))) return;
+    b.health = (b.health ?? 100) - damage * (b.shieldMultiplier ?? 1);
+    b.hurtAt = now;
+    const a = q?.animal;
+    if (a) {
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      b.x = Math.min(MAP.x, Math.max(0, b.x + ((b.x - a.x) / d) * 30));
+      b.y = Math.min(MAP.y, Math.max(0, b.y + ((b.y - a.y) / d) * 30));
+    }
+    if (b.health <= 0) this.kill(p, q, cause);
+  }
+
+  // p's animal dies. The killer gains a quarter of its XP (at least five foods' worth); it drops
+  // meat that anyone can eat for a minute.
+  kill(p, q, cause = DEATH.PLAYER) {
+    const b = p.animal;
+    if (!b) return;
+    const a = q?.animal;
+    if (a) {
+      const gain = Math.max(this.foodXP(a) * 5, Math.round(p.xp * 0.25));
+      q.xp += gain;
+      q.kills = (q.kills ?? 0) + 1;
+      this.sendXP(q);
+      this.checkProgress(q);
+      this.serverMessage(q, `You ate ${p.name || "a player"}! +${gain.toLocaleString("en-US")} XP`);
+    }
+    const meat = 2 + Math.floor(b.tier / 3);
+    for (let i = 0; i < meat; i++) {
+      const t = (i / meat) * Math.PI * 2, r = b.size * 0.4;
+      const e = this.addEntity({
+        type: "food", species: D.flesh, biome: b.biomeHere, x: b.x + Math.cos(t) * r, y: b.y + Math.sin(t) * r,
+        size: 18 + Math.min(20, b.tier), angle: t, fromKill: true,
+      });
+      setTimeout(() => this.timer && this.entities.get(e.id) === e && this.removeEntity(e.id), 60_000);
+    }
+    this.onDeath?.(p, q);
+    this.despawn(p, true, { cause, killer: a ? q : null });
+  }
+
+  // Health back over time, the water/lava bar, and the timed status effects.
+  vitalsStep(p, dt, now) {
+    const a = p.animal;
+    if (now - (a.hurtAt ?? 0) > REGEN_DELAY_MS && a.health < 100) a.health = Math.min(100, a.health + REGEN_PER_S * dt);
+    const cfg = this.configOf(a);
+    const type = cfg.animalResource?.type ?? 0;
+    const custom = CUSTOM.biomes[cfg.biome];
+    let rate = -RESOURCE_DRAIN * (a.boostUntil > now ? 3 : 1) * (a.flying ? 2 : 1) * (this.layer === "space" ? 0.5 : 1);
+    if (type === 0 && this.terrainAt(a.x, a.y) === "water") rate = RESOURCE_REFILL;
+    if (type === 1 && this.inLava(a.x, a.y)) rate = RESOURCE_REFILL;
+    if (custom && this.layer !== "surface" && type === 0 && this.terrainAt(a.x, a.y) !== "water") rate *= 0.6;
+    a.resource = Math.max(0, Math.min(100, (a.resource ?? 100) + rate * dt));
+    const shown = Math.round(a.resource);
+    if (shown !== p.shownResource) {
+      p.shownResource = shown;
+      p.ws.send(updateMessage([["resource", [encode("resource", { resource: shown })]]]));
+    }
+    if (a.resource <= 0) this.hurt(p, RESOURCE_HURT * dt, null, now, DEATH.RESOURCE);
+    if (!p.animal) return;
+    // status effects that run out on their own (abilities set the *Until times)
+    const fx = (a.fx ??= {});
+    for (const k of ["stunned", "poisoned", "burning", "frozen", "bleeding", "healing", "web", "constricted"]) fx[k] = now < (a[k + "Until"] ?? 0);
+    fx.lowResource = a.resource < 25;
+    if (fx.poisoned) this.hurt(p, 5 * dt, a.poisonedBy ?? null, now);
+    if (p.animal && fx.burning) this.hurt(p, 8 * dt, a.burningBy ?? null, now);
+    if (p.animal && fx.bleeding) this.hurt(p, 3 * dt, a.bleedingBy ?? null, now);
+    if (p.animal && fx.healing) a.health = Math.min(100, a.health + 10 * dt);
+  }
+
+  inLava(x, y) {
+    if (this.volcano.r && Math.hypot(x - this.volcano.x, y - this.volcano.y) < this.volcano.r) return true;
+    return this.lavaPools.some((e) => Math.hypot(x - e.x, y - e.y) < e.size / 2);
   }
 
   sendXP(p) {
@@ -744,9 +900,10 @@ export class Lobby {
       if (range && (a.tier < range.minimumTier || a.tier > range.maximumTier)) continue;
       this.removeEntity(e.id);
       p.xp += this.foodXP(a);
+      a.resource = Math.min(100, (a.resource ?? 100) + (JUICY[D[e.species]] ?? 2) + (CUSTOM.biomes[this.configOf(a).biome] ? 4 : 0));
       this.sendXP(p);
       this.checkProgress(p);
-      if (e.fromCake) continue; // put out by a cake, which makes more
+      if (e.fromCake || e.fromKill) continue; // put out by a cake (which makes more), or meat from a kill
       const { id, ...food } = e;
       setTimeout(() => this.timer && this.addEntity(food), 8000);
     }
@@ -872,6 +1029,7 @@ export class Lobby {
     const now = Date.now();
     if (this.ticks % 5 === 0) // keep loaded slingshots showing for players who just joined
       for (const sling of this.slingshots) if (sling.loaded) pumpkins.push(record((w) => writeSlingshot(w, sling, { loaded: sling.loaded.animal })));
+    this.combatStep(now);
     const records = [];
     for (const p of this.players) {
       const a = p.animal;
@@ -879,10 +1037,12 @@ export class Lobby {
       if (p.flight) {
         if (this.fly(p, now)) continue; // flung into the sky
       } else {
-        this.move(p, dt);
+        if (!a.fx?.stunned && !a.fx?.web && !a.fx?.frozen) this.move(p, dt);
         this.slingshotStep(p, now, pumpkins);
         if (!p.sling && this.portalStep(p, now)) continue;
       }
+      this.vitalsStep(p, dt, now);
+      if (!p.animal) continue; // ran dry
       this.cakeStep(p, now);
       // ease toward the size XP calls for, so growing and shrinking animate
       const target = this.targetSize(p) * (1 + CAKE_GROWTH * (p.cakeLayer ?? 0));
@@ -1112,6 +1272,8 @@ export function createGameServer({ accounts, records = null, parties, map = null
       case "startGameSession": {
         p.name = (msg.name || p.account?.displayName || "").slice(0, 32);
         p.xp = 0;
+        p.kills = 0;
+        p.shownResource = null;
         p.autoFloor = 0;
         p.fixedSize = null;
         p.spawnedAt = Date.now();
@@ -1123,6 +1285,7 @@ export function createGameServer({ accounts, records = null, parties, map = null
           else lobby.serverMessage(p, "That party has ended, or its link has expired. Started a new one.");
         }
         target.spawn(p, "mouse");
+        if (p.animal) p.animal.immuneUntil = Date.now() + SPAWN_IMMUNITY_MS;
         if (target.party)
           target.serverMessage(p, `Party ${target.party} · invite: ${p.origin}/?server=${p.serverId}&mode=PARTY&inviteID=${target.party}`);
         return;
