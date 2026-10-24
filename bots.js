@@ -77,6 +77,7 @@ export function botsStep(lobby, now) {
 
 function think(lobby, p, now) {
   const a = p.animal;
+  if (p.boss) p.menu = []; // bosses stay the monster they came as
   // upgrades: pick a card after a moment, staying in this world
   if (p.menu.length) {
     p.pickAt ??= now + rand(1200, 3500);
