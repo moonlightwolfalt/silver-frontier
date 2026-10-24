@@ -1,4 +1,4 @@
-// AI animals, so no world is ever empty. Bots are players without a connection: they spawn,
+// AI animals, so no world is ever empty. Each has a skill level (easy, normal, hard). Bots are players without a connection: they spawn,
 // eat, drink, flee animals that can eat them, hunt animals they can eat, use their abilities,
 // pick upgrades and respawn after dying. They show on the in-game leaderboard but never on the
 // worldwide boards or the server list's player counts.
@@ -6,7 +6,7 @@
 // BOTS (default 8) sets how many each region's FFA world gets; Teams and Battle Royale worlds get
 // a few too. /bots <n> changes it for the world you're in.
 import { M, T, canEatAnimal, getLayerOfBiome } from "./game-server.js";
-import { startAbility } from "./abilities.js";
+import { startAbility, effectOf } from "./abilities.js";
 
 const BOT_NAMES = [
   "Pip", "Mochi", "Biscuit", "Nugget", "Pebble", "Ziggy", "Clover", "Maple", "Sprout", "Tofu", "Waffle", "Echo",
@@ -14,7 +14,15 @@ const BOT_NAMES = [
   "Sable", "Truffle", "Basil", "Orbit", "Puddle", "Quill", "Sorrel", "Thistle", "Wren", "Yarrow", "Bean", "Cosmo",
 ];
 const STARTERS = ["mouse", "chipmunk", "kangaroo_rat", "lemming", "shrimp"];
-const THINK_MS = 400;
+// Skill levels: how often a bot decides, how far it sees, how keen it is to boost, whether it
+// picks abilities for the moment (escape vs attack) and leads moving prey.
+const SKILLS = {
+  easy: { think: 650, sight: 0.75, boost: 0.1, smart: false, lead: false },
+  normal: { think: 400, sight: 1, boost: 0.25, smart: true, lead: false },
+  hard: { think: 250, sight: 1.25, boost: 0.5, smart: true, lead: true },
+};
+const ESCAPES = new Set(["shell", "spikes", "burrow", "fly", "jump", "dash", "stun", "freeze", "web", "gust", "push", "dive"]);
+const ATTACKS = new Set(["strike", "claw", "grab", "venom", "fire", "shock", "quake", "poison", "pull", "freeze", "web", "stun", "dash"]);
 const RESPAWN_MS = 6000;
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -27,6 +35,7 @@ export function addBot(lobby, { name, slug, boss = false } = {}) {
     name: name ?? (BOT_NAMES.find((n) => !used.has(n)) ?? `Bot ${lobby.players.size + 1}`),
     animal: null, target: { x: 0, y: 0 }, menu: [], menuTier: 1, xp: 0, kills: 0, nextThink: 0,
     respawnAt: 0, startSlug: slug,
+    skill: boss ? "hard" : pick(["easy", "normal", "normal", "hard"]),
   };
   lobby.players.add(p);
   if (lobby.mode === "TEAMS") lobby.pickTeamFor?.(p);
@@ -69,7 +78,7 @@ export function botsStep(lobby, now) {
       continue;
     }
     if (now >= p.nextThink) {
-      p.nextThink = now + THINK_MS + Math.random() * 200;
+      p.nextThink = now + (SKILLS[p.skill] ?? SKILLS.normal).think + Math.random() * 200;
       think(lobby, p, now);
     }
   }
@@ -92,35 +101,50 @@ function think(lobby, p, now) {
       return;
     }
   }
+  const skill = SKILLS[p.skill] ?? SKILLS.normal;
+  const kind = (a.ability ??= effectOf(lobby.abilityName(a)));
+  const use = (when) => when && !a.abilityActive && now >= (a.abilityReadyAt ?? 0) && startAbility(lobby, p, now);
   let threat = null, threatD = Infinity, prey = null, preyD = Infinity;
   for (const q of lobby.players) {
     const b = q.animal;
     if (!b || q === p) continue;
     const d = Math.hypot(b.x - a.x, b.y - a.y);
-    if (d < 420 + b.size && d < threatD && canEatAnimal(b, a) && lobby.canHurt(p, q, now)) (threat = b), (threatD = d);
-    if (d < 520 && d < preyD && (canEatAnimal(a, b) || (p.boss && b.tier <= a.tier)) && lobby.canHurt(q, p, now)) (prey = b), (preyD = d);
+    if (d < (420 + b.size) * skill.sight && d < threatD && canEatAnimal(b, a) && lobby.canHurt(p, q, now)) (threat = b), (threatD = d);
+    if (d < 520 * skill.sight && d < preyD && (canEatAnimal(a, b) || (p.boss && b.tier <= a.tier)) && lobby.canHurt(q, p, now)) (prey = b), (preyD = d);
   }
   if (threat && !p.boss) {
     const dx = a.x - threat.x, dy = a.y - threat.y, d = Math.hypot(dx, dy) || 1;
     p.target = lobby.clampToMap({ x: a.x + (dx / d) * 500, y: a.y + (dy / d) * 500 });
-    if (threatD < threat.size + 120) lobby.boost(p);
-    if (threatD < threat.size + 80 && Math.random() < 0.3) startAbility(lobby, p, now); // shells, burrows, dashes
+    if (threatD < threat.size + 160 && Math.random() < skill.boost * 2) lobby.boost(p);
+    if (threatD < threat.size + 100) use(skill.smart ? ESCAPES.has(kind) : Math.random() < 0.3);
     return;
   }
+  if ((a.health ?? 100) < 55 && kind === "heal") use(true);
   if ((a.resource ?? 100) < 35) {
     const drink = lobby.nearestDrink(a);
     if (drink) return void (p.target = drink);
   }
-  if (prey && (a.health ?? 100) > 35) {
-    p.target = { x: prey.x, y: prey.y };
-    if (preyD < a.size + prey.size + 60) {
-      if (Math.random() < 0.25) lobby.boost(p);
-      if (Math.random() < 0.3) startAbility(lobby, p, now);
+  // join a pack: prey another bot nearby is already chasing
+  if (!prey) {
+    for (const [id, until] of (lobby.packTargets ??= new Map())) {
+      if (now > until) { lobby.packTargets.delete(id); continue; }
+      const q = [...lobby.players].find((o) => o.animal?.id === id);
+      const b = q?.animal;
+      if (b && Math.hypot(b.x - a.x, b.y - a.y) < 900 && canEatAnimal(a, b) && lobby.canHurt(q, p, now)) { prey = b; preyD = Math.hypot(b.x - a.x, b.y - a.y); break; }
     }
+  }
+  if (prey && (a.health ?? 100) > 35) {
+    (lobby.packTargets ??= new Map()).set(prey.id, now + 3000);
+    const lead = skill.lead ? 0.35 : 0; // hard bots aim where the prey is going
+    p.target = lobby.clampToMap({ x: prey.x + (prey.vx ?? 0) * lead, y: prey.y + (prey.vy ?? 0) * lead });
+    const reach = a.size + prey.size + 60;
+    if (preyD < reach * 2 && Math.random() < skill.boost) lobby.boost(p);
+    if (preyD < reach) use(skill.smart ? ATTACKS.has(kind) : Math.random() < 0.3);
     return;
   }
-  const food = lobby.nearestFood(a, 700);
+  const food = lobby.nearestFood(a, 700 * skill.sight);
   if (food) return void (p.target = { x: food.x, y: food.y });
+  if (kind === "forage") use(true);
   if (now >= (p.wanderUntil ?? 0)) {
     p.wanderUntil = now + rand(2500, 5000);
     p.target = lobby.clampToMap({ x: a.x + rand(-600, 600), y: a.y + rand(-600, 600) });

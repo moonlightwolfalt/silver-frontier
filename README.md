@@ -200,7 +200,12 @@ an allowed email before the site loads (free for up to 50 users).
   signed-in account's balance for the shop.
 - **AI bots:** every region's FFA world has `BOTS` of them (default 8), Teams and Battle Royale
   worlds a few. They eat, drink, run from predators, hunt prey, use abilities, upgrade,
-  respawn and accept most 1v1 requests. They show on the in-game leaderboard but never on the
+  respawn and accept most 1v1 requests. Each has a skill level (easy, normal or hard) that sets
+  how quickly it reacts, how far it sees and how keen it is to boost. Normal and hard bots pick
+  abilities for the moment (escapes when chased, attacks when close, heals when hurt), hard ones
+  aim where their prey is going, and bots near each other gang up on the same prey.
+  `bun tools/playtest.mjs` runs a simulated match with bots and prints the stats. (15 minutes
+  with 20 bots: about 25 kills, an average life of 6 minutes, a median best tier of 10.) They show on the in-game leaderboard but never on the
   worldwide boards or the server list's counts. `/bots <n>` changes the number for the world
   you're in.
 - **World events** (each FFA world, every 6-10 minutes while people play; `/event <name>` starts
