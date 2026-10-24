@@ -17,6 +17,7 @@ import { findClientChunk, loadClient } from "./client-runtime.js";
 import { REGIONS } from "./regions.js";
 import { generateWorld, generateLayerWorld, worldFromRecording, STYLED_FOODS } from "./world.js";
 import { CUSTOM, layerOfBiome } from "./custom-biomes.js";
+import { startAbility, stopAbility, startDiving, stopDiving, toggleClimb, abilityStep } from "./abilities.js";
 import { modeTick, onSpawn, beforeLethal, onGone, arenaRequest, arenaResponse, pickTeam, TEAMS, MODE_BY_SLUG } from "./modes.js";
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
@@ -40,6 +41,7 @@ const [Ot, c_, gt, T, M, Lr, E, gC, pg, Le, D, cm, pm, sg, nr] =
   ["Ot", "c_", "gt", "T", "M", "Lr", "E", "gC", "pg", "Le", "D", "cm", "pm", "sg", "nr"].map((n) => client.get(n));
 const Writer = client.get("lt");
 const FOOD_TIERS = client.get("Ul");
+const NAMES = client.get("vi"); // the client's English animal names and ability names
 const Reader = client.get("x");
 const config = loadClient(findClientChunk(CLIENT_DIR, "protocolVersion:"));
 export const PROTOCOL_VERSION = config.get("c").protocolVersion;
@@ -166,7 +168,7 @@ function writeAnimalSync(w, a) {
   w.writeUint8(precision(a.angle, 2 * Math.PI, 8));
   w.writeUint8(Math.max(0, Math.min(100, Math.round(a.health ?? 100)))); // health
   w.writeUint16(precision(a.size, MAX_ANIMAL_SIZE, 16));
-  if (M[T[a.species]].canClimbTree) w.writeBoolean(false); // in tree
+  if (M[T[a.species]].canClimbTree) w.writeBoolean(!!a.inTree); // up a tree
   w.writeUint32(0); // padding for species-specific fields
 }
 
@@ -647,6 +649,7 @@ export class Lobby {
     if (!b || b.godMode || now < (b.immuneUntil ?? 0) || b.flying || b.fx?.hidden || b.fx?.shell) return false;
     if (!q) return true;
     if (!a || a === b || a.flying || a.fx?.hidden) return false;
+    if (b.inTree && !this.configOf(a).canClimbTree) return false; // safe up a tree
     if (!!a.fx?.diving !== !!b.fx?.diving) return false; // divers only meet divers
     if (this.mode === "SANDBOX") return false;
     if (this.mode === "TEAMS" && p.team && p.team === q.team) return false;
@@ -745,6 +748,21 @@ export class Lobby {
     if (p.animal && fx.burning) this.hurt(p, 8 * dt, a.burningBy ?? null, now);
     if (p.animal && fx.bleeding) this.hurt(p, 3 * dt, a.bleedingBy ?? null, now);
     if (p.animal && fx.healing) a.health = Math.min(100, a.health + 10 * dt);
+  }
+
+  abilityName(a) {
+    return NAMES[a.slug]?.ability1 ?? "";
+  }
+
+  // Puts out n foods the animal can eat around it (abilities that dig or find food).
+  forage(a, n) {
+    const edible = Object.entries(FOOD_TIERS).filter(([name, r]) => D[name] !== undefined && a.tier >= r.minimumTier && a.tier <= r.maximumTier && !["coin", "gem", "carcass", "flesh"].includes(name));
+    for (let i = 0; i < n && edible.length; i++) {
+      const [name] = edible[Math.floor(this.rand() * edible.length)];
+      const t = this.rand() * Math.PI * 2, r = a.size * 0.7 + 30;
+      const e = this.addEntity({ type: "food", species: D[name], biome: a.biomeHere, x: a.x + Math.cos(t) * r, y: a.y + Math.sin(t) * r, size: 20, angle: t, fromKill: true });
+      setTimeout(() => this.timer && this.entities.get(e.id) === e && this.removeEntity(e.id), 30_000);
+    }
   }
 
   inLava(x, y) {
@@ -874,6 +892,7 @@ export class Lobby {
     const base = (360 - a.tier * 8) * a.speed * (cfg.terrainSpeedComfort?.[terrain] ?? 1);
     let want = dist > 5 && !p.movementLocked ? base * Math.min(1, dist / 250) : 0;
     if (a.boostUntil > now) want = base * 2.2;
+    want *= a.abilitySpeed ?? 1; // shells and trees hold still, burrowing is slow
     const dirX = dist > 0 ? dx / dist : Math.cos(a.angle), dirY = dist > 0 ? dy / dist : Math.sin(a.angle);
     const onIce = a.biomeHere === E.arctic && terrain === "land" && (cfg.iceGrip ?? 0.15) < 1;
     const grip = onIce ? Math.max(0.04, cfg.iceGrip ?? 0.15) : 0.35;
@@ -927,6 +946,7 @@ export class Lobby {
 
   eat(p) {
     const a = p.animal;
+    if (a.flying || a.fx?.hidden || a.fx?.shell) return; // nothing to eat in the air, underground or in a shell
     for (const e of this.entities.values()) {
       if (e.type === "pumpkin") {
         // Pumpkins aren't food: touching one pushes it so it rolls, boosting kicks it hard.
@@ -1083,6 +1103,8 @@ export class Lobby {
       }
       this.vitalsStep(p, dt, now);
       if (!p.animal) continue; // ran dry
+      abilityStep(this, p, now, dt);
+      if (!p.animal) continue;
       this.cakeStep(p, now);
       // ease toward the size XP calls for, so growing and shrinking animate
       const target = this.targetSize(p) * (1 + CAKE_GROWTH * (p.cakeLayer ?? 0));
@@ -1350,6 +1372,16 @@ export function createGameServer({ accounts, records = null, parties, map = null
         return;
       case "startBoost":
         return lobby.boost(p);
+      case "startAbility1":
+        return lobby.players.has(p) && startAbility(lobby, p, Date.now());
+      case "stopAbility1":
+        return stopAbility(lobby, p, Date.now());
+      case "startDiving":
+        return startDiving(lobby, p, Date.now());
+      case "stopDiving":
+        return stopDiving(lobby, p, Date.now());
+      case "toggleClimbingState":
+        return toggleClimb(lobby, p);
       case "arenaRequest":
         return arenaRequest(lobby, p, msg.id);
       case "arenaResponse":

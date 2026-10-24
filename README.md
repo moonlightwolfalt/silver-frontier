@@ -152,6 +152,28 @@ an allowed email before the site loads (free for up to 50 users).
   seconds out of a fight. A kill gives a quarter of the victim's XP (at least five foods' worth)
   and leaves meat. The death screen shows who ate you. New animals get 3 seconds of spawn
   immunity.
+- **Abilities (W or right click), for every animal including the custom ones:** mope.io runs a
+  different ability for nearly every animal on its own servers. Here each animal's ability name
+  picks one of these effects (`abilities.js`), and the client plays the animal's own animation
+  while it's on:
+  - **dash:** charge, pounce, lunge, slide. Hits whoever you run into.
+  - **jump:** a short hop over things.
+  - **fly:** fly, hover, glide or soar while held. Untouchable, but you can't eat.
+  - **shell:** turtles, armadillos, disguises. Immune and still.
+  - **spikes:** hedgehog, pufferfish. Shell, plus it hurts anyone touching you.
+  - **burrow:** dig hole, burrow, tunnel. Hidden and slow.
+  - **strike / claw / grab / venom:** a hit in front. Claws make the target bleed, grabs
+    constrict and stun, venom poisons.
+  - **fire:** burns in front of you. **freeze**, **shock**, **quake**, **web** and **poison**
+    hit everyone around you.
+  - **gust:** blows animals away. **pull:** black holes and whirlpools drag them in.
+  - **stun:** roar, howl, squawk. Stuns your tier and below.
+  - **heal:** heal over time. **forage:** dig up food. **push:** spit water.
+  - **dive:** dive under water.
+
+  The dive button lets water animals dive in water while oxygen lasts, and climbing animals
+  climb trees with the climb button, safe from animals that can't climb. Cooldowns show on the
+  buttons.
 - **Water and lava:** the bar drains slowly (faster while boosting or flying). Water animals
   refill in any water, lava animals in the volcano and lava pools, and every food tops it up a
   little (water, melons and kelp more). Running dry costs health.
