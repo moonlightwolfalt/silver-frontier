@@ -146,6 +146,36 @@ an allowed email before the site loads (free for up to 50 users).
   `custom-biomes.json`. `patch-client.ts` adds it to the client, and
   `python3 tools/make-biome-art.py` redraws the sprites into `custom-assets/` after you change
   it.
+- **Combat:** animals bite by mope.io's own rule. A higher tier eats animals down to about half
+  its tier (the red and green circles show who), and tier 15+ animals can bite the tail of their
+  own tier. Bites take more health the bigger the tier gap, and health comes back after a few
+  seconds out of a fight. A kill gives a quarter of the victim's XP (at least five foods' worth)
+  and leaves meat. The death screen shows who ate you. New animals get 3 seconds of spawn
+  immunity.
+- **Water and lava:** the bar drains slowly (faster while boosting or flying). Water animals
+  refill in any water, lava animals in the volcano and lava pools, and every food tops it up a
+  little (water, melons and kelp more). Running dry costs health.
+- **Game modes** (the menu's mode list, in every region):
+  - **FFA** and **PARTY** as before, plus **casual 1v1s**: at tier 15+ (signed in), use the 1v1
+    button or `/1v1 <player>`. If they accept, you fight in the arena ring: 3 s countdown, 90 s
+    fight, and the ring closes in. The loser is eaten, and the winner gets a win and bonus XP.
+    Ratings don't change.
+  - **1V1 RANKED:** pick a tier 15-17 fighter and you're matched with the closest rating. Elo
+    (K 32, start 1000) with ranks Bronze, Silver (1100), Gold (1250), Platinum (1400),
+    Diamond (1550) and Champion (1700). `/rank` shows yours, and the menu Leaderboard has a
+    **Ranked 1v1 rating** board.
+  - **BATTLE ROYALE:** a round starts 15 s after two players are in. The ring shrinks over 4
+    minutes and hurts anyone outside, and the last animal standing wins (**Battle Royale
+    wins** board).
+  - **TEAMS:** Red and Blue, names in team colours, no friendly fire. Team XP is announced and
+    `/team` shows it.
+  - **SANDBOX:** try any animal with ▲/▼. Nobody can be hurt, the water bar doesn't drain, and
+    nothing counts for the boards.
+- **Tournaments (staff-run):** `/tournament open <4|8|16> [prize XP]`, players `/join`, then
+  `/tournament start`. Each round is played in 1v1 arenas at the same time. Tournament fights
+  aren't lethal (a timeout goes to the healthier animal), and the champion gets the prize and a
+  **Tournament wins** board entry. `/tournament` shows the state and `/tournament cancel`
+  stops it.
 - **Giant cake:** walk onto it to climb its three layers. Each layer makes you 12% bigger and
   widens your view. Whoever has held the top layer longest is king of the cake and earns three
   foods' worth of XP every 5 s. The cake keeps putting out party food around it, up to 30 at a
@@ -250,7 +280,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 
 | Command | Role |
 | --- | --- |
-| `/help`, `/top` | everyone |
+| `/help`, `/top`, `/1v1 <player>`, `/rank`, `/team`, `/join`, `/tournament` | everyone |
 | `/players`, `/kick <player>` | moderator |
 | `/ban <player> [minutes]`, `/unban <email>` | trusted moderator |
 | `/announce <message>` | event team |
@@ -271,6 +301,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `custom-biomes.json`, `custom-biomes.js`, `tools/make-biome-art.py` | Swamp, underground, sky and space: their animals, foods, colours, and the sprite generator |
 | `parties.js` | Party lobbies and invite codes |
 | `records.js` | Worldwide Most XP and Pumpkin goals boards (weekly, monthly, all time) |
+| `modes.js`, `mode-list.js` | 1v1 arenas, ranked Elo, tournaments, Battle Royale, Teams, Sandbox |
 | `accounts.js` | Account database, email login, local version of Mope's account/shop API |
 | `dev-commands.js` | Chat commands and the client's staff tools |
 | `regions.js` | The region list |

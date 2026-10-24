@@ -15,6 +15,7 @@ import { REGIONS } from "./regions.js";
 import { PUMPKINS, PUMPKIN_COLOURS } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
 import { CUSTOM } from "./custom-biomes.js";
+import { MODE_LIST } from "./mode-list.js";
 
 const dir = process.argv[2] ?? "mope-dump/site/mope.io";
 const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith(".js")).map((f) => join(dir, f));
@@ -24,20 +25,21 @@ const GROUPS: Record<string, string> = { US: "AMERICA", BR: "SOUTH_AMERICA", EU:
 const BEGIN = "/* private-server:begin */";
 const END = "/* private-server:end */";
 const HELPERS = `${BEGIN}
+var LOCAL_MODES = ${JSON.stringify(MODE_LIST)};
 var LOCAL_REGIONS = ${JSON.stringify(REGIONS.map((r) => ({ ...r, group: GROUPS[r.countryCode] ?? "AMERICA" })))};
 async function localServers() {
   let stats = {};
   try {
     stats = await (await fetch(\`\${location.origin}/api/servers\`)).json();
   } catch {}
-  let servers = { FFA: {}, PARTY: {} },
+  let servers = Object.fromEntries(LOCAL_MODES.map(([, label]) => [label, {}])),
     regions = {},
     playerCount = 0;
   for (let r of LOCAL_REGIONS) {
     let id = \`local-\${r.id}\`;
     regions[id] = { id, name: r.name, group: r.group, countryCode: r.countryCode, lat: r.lat, lon: r.lon, status: \`online\` };
-    for (let [mode, suffix] of [[\`FFA\`, \`\`], [\`PARTY\`, \`/new\`]]) {
-      let serverId = mode === \`FFA\` ? id : \`\${id}-party\`;
+    for (let [key, mode, suffix] of LOCAL_MODES) {
+      let serverId = key === \`FFA\` ? id : \`\${id}-\${key.toLowerCase()}\`;
       servers[mode][id] = [
         { id: serverId, name: r.name, url: \`\${location.origin}/play/\${r.id}\${suffix}\`, lat: r.lat, lon: r.lon,
           countryCode: r.countryCode, regionId: id, mode },

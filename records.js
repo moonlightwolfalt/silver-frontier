@@ -9,7 +9,11 @@ import path from "node:path";
 export const STATS = [
   { key: "most_xp", label: "Most XP", unit: "xp", board: true },
   { key: "pumpkin_goals", label: "Pumpkin goals", unit: "count", board: true },
+  { key: "ranked_rating", label: "Ranked 1v1 rating", unit: "count", board: true },
+  { key: "tournament_wins", label: "Tournament wins", unit: "count", board: true },
+  { key: "br_wins", label: "Battle Royale wins", unit: "count", board: true },
 ];
+export const START_RATING = 1000;
 
 // ISO week, e.g. "2026-W43"
 function isoWeek(d) {
@@ -31,6 +35,7 @@ export function createRecords({ dataDir }) {
   const file = path.join(dataDir, "records.json");
   let db = { people: {}, boards: {} }; // boards[stat][bucket][personId] = value
   try { db = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+  db.ratings ??= {}; // personId -> current ranked 1v1 rating
 
   let timer = null;
   const save = () => {
@@ -63,14 +68,25 @@ export function createRecords({ dataDir }) {
     if (changed) save();
   }
 
-  function addGoal(p) {
+  // +1 on a counting board (goals, wins); returns the all-time total.
+  function addCount(stat, p) {
     const id = person(p);
     for (const key of Object.values(bucketKeys())) {
-      const b = bucket("pumpkin_goals", key);
+      const b = bucket(stat, key);
       b[id] = (b[id] ?? 0) + 1;
     }
     save();
-    return db.boards.pumpkin_goals.alltime[id];
+    return db.boards[stat].alltime[id];
+  }
+  const addGoal = (p) => addCount("pumpkin_goals", p);
+
+  // Ranked 1v1: the current rating, shown on every period's board.
+  const rating = (p) => db.ratings[person(p)] ?? START_RATING;
+  function setRating(p, value) {
+    const id = person(p);
+    db.ratings[id] = value;
+    for (const key of Object.values(bucketKeys())) bucket("ranked_rating", key)[id] = value;
+    save();
   }
 
   const ranked = (stat, period) => {
@@ -93,6 +109,9 @@ export function createRecords({ dataDir }) {
   return {
     recordXP,
     addGoal,
+    addCount,
+    rating,
+    setRating,
     catalogue: () => STATS,
     board(stat, period, limit = 50) {
       const info = STATS.find((s) => s.key === stat);

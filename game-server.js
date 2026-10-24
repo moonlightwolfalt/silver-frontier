@@ -17,6 +17,7 @@ import { findClientChunk, loadClient } from "./client-runtime.js";
 import { REGIONS } from "./regions.js";
 import { generateWorld, generateLayerWorld, worldFromRecording, STYLED_FOODS } from "./world.js";
 import { CUSTOM, layerOfBiome } from "./custom-biomes.js";
+import { modeTick, onSpawn, beforeLethal, onGone, arenaRequest, arenaResponse, pickTeam, TEAMS, MODE_BY_SLUG } from "./modes.js";
 import { runCommand } from "./dev-commands.js";
 import { PUMPKINS, pickPumpkin, pumpkinXP } from "./pumpkins.js";
 import { MAX_XP, TIER_XP } from "./limits.js";
@@ -45,6 +46,8 @@ export const PROTOCOL_VERSION = config.get("c").protocolVersion;
 export const ROLES = nr;
 for (const [i, xp] of TIER_XP.entries()) Lr[i].requiredXP = xp; // same table as the patched client
 export const game = { T, M, Lr, D, E };
+export { E, Lr };
+export const getRecords = () => recordsRef;
 
 let accountsRef = null; // set by createGameServer, used for equipped skins
 let recordsRef = null; // set by createGameServer: worldwide most-XP and pumpkin-goal records
@@ -56,7 +59,7 @@ for (const b of Object.values(pg.biomes)) {
   MAP.y = Math.max(MAP.y, b.y + b.height / 2);
 }
 const MAX_ANIMAL_SIZE = M.king_dragon.maximumSize;
-const precision = (v, max, bits) => Writer.toPrecision(Math.min(max, Math.max(0, v)), max, bits);
+export const precision = (v, max, bits) => Writer.toPrecision(Math.min(max, Math.max(0, v)), max, bits);
 
 // ---------- encoding (mirrors the client's readers) ----------
 
@@ -64,7 +67,7 @@ const precision = (v, max, bits) => Writer.toPrecision(Math.min(max, Math.max(0,
 // big enough (the client pre-sizes from its schemas). So start with room and trim at the end.
 const newWriter = () => new Writer(1024, true);
 const written = (w) => w.buffer.slice(0, w.offset);
-const record = (fn) => {
+export const record = (fn) => {
   const w = newWriter();
   fn(w);
   return written(w);
@@ -109,6 +112,17 @@ function writeInit(w, e) {
     case "balloon":
       w.writeUint8(e.color ?? 0); // colour and lean
       break;
+    case "arena": // e_.readInitProperties: the two fighters, wins, timer, scores, walls, message
+      w.writeUint16(e.p1?.animal?.id ?? 0);
+      w.writeUint16(e.p2?.animal?.id ?? 0);
+      w.writeUint8(Math.min(255, e.p1?.wins ?? 0));
+      w.writeUint8(Math.min(255, e.p2?.wins ?? 0));
+      w.writeUint16(Math.max(0, Math.round(e.timer ?? 0)));
+      w.writeUint8(Math.min(255, Math.round(e.score1 ?? 0)));
+      w.writeUint8(Math.min(255, Math.round(e.score2 ?? 0)));
+      w.writeUint16(precision(e.wall ?? 0, e.size / 2, 16));
+      w.writeString(e.message ?? "");
+      break;
     case "river":
       w.writeUint16(e.height); // rivers carry their length and width
       break;
@@ -131,7 +145,7 @@ function writeAnimalSync(w, a) {
   w.writeBoolean(true); // health present
   w.writeBoolean(true); // size present
   w.writeBoolean(false); // hole changed
-  if (a.tier >= 15) w.writeBoolean(false); // arena wins present
+  if (a.tier >= 15) w.writeBoolean(true); // arena wins present
   const fx = a.fx ?? NO_FX;
   for (const k of ["diving", "healing", "burning", "frozen", "bleeding", "poisoned", "stunned"]) w.writeBoolean(!!fx[k]);
   w.writeBoolean(!!fx.web); // stuck in a web
@@ -148,6 +162,7 @@ function writeAnimalSync(w, a) {
   w.writeBits(a.biomeHere, 3);
   if (fx.frozen) w.writeBits(1, 2); // frozen by a shot
   if (fx.bleeding) w.writeBoolean(false); // stink
+  if (a.tier >= 15) w.writeUint8(Math.min(255, a.wins ?? 0)); // "(Wins: n)" under the name
   w.writeUint8(precision(a.angle, 2 * Math.PI, 8));
   w.writeUint8(Math.max(0, Math.min(100, Math.round(a.health ?? 100)))); // health
   w.writeUint16(precision(a.size, MAX_ANIMAL_SIZE, 16));
@@ -156,6 +171,23 @@ function writeAnimalSync(w, a) {
 }
 
 const NO_FX = {};
+
+// position record for an arena (or the Battle Royale zone): 14-bit id, B.synchronize (no move),
+// then e_.synchronize: timer, both scores, wall thickness, message and the two progress rings.
+export function writeArenaSync(w, e) {
+  w.writeBits(e.id, 14);
+  w.writeBoolean(false); // x
+  w.writeBoolean(false); // y
+  w.writeBoolean(false); // tumbling
+  for (let i = 0; i < 6; i++) w.writeBoolean(true);
+  w.writeUint16(Math.max(0, Math.round(e.timer ?? 0)));
+  w.writeUint8(Math.min(255, Math.round(e.score1 ?? 0)));
+  w.writeUint8(Math.min(255, Math.round(e.score2 ?? 0)));
+  w.writeUint16(precision(e.wall ?? 0, e.size / 2, 16));
+  w.writeString(e.message ?? "");
+  w.writeUint16(precision(e.inner ?? 0, 1, 16));
+  w.writeUint16(precision(e.outer ?? 0, 1, 16));
+}
 
 // position record for a moving pumpkin: 14-bit id, B.synchronize, then the pumpkin's angle and
 // size flags (Eg.synchronize).
@@ -252,7 +284,7 @@ function writeSlingshot(w, sling, { loaded = null, fired = false }) {
 }
 
 // update message: groups of [u16 65535 - kind][u16 count] + length-prefixed records
-function updateMessage(groups) {
+export function updateMessage(groups) {
   const w = newWriter();
   w.writeUint8(St.update.encoder);
   for (const [kind, records] of groups) {
@@ -354,6 +386,7 @@ export class Lobby {
     this.layer = layer; // "surface", or a layer world: underground, sky, space (custom-biomes.js)
     this.base = base; // a layer world's surface lobby
     this.layers = new Map(); // a surface lobby's layer worlds, made when first entered
+    this.arenas = new Set(); // 1v1 fights in progress (modes.js)
     this.players = new Set();
     this.nextId = 1;
     this.freeIds = []; // ids of removed entities, reused so ids stay small (animals sync 14-bit ids)
@@ -434,6 +467,7 @@ export class Lobby {
   transfer(p, layer, { slug, subspecies, at } = {}) {
     const base = this.base ?? this;
     const to = layer === "surface" ? base : base.layerLobby(layer);
+    onGone(this, p);
     const prev = p.animal;
     slug ??= prev?.slug;
     subspecies ??= prev?.subspecies ?? 0;
@@ -553,9 +587,11 @@ export class Lobby {
       skin: p.skinOverride ?? accountsRef?.equippedSkin(p.account, slug) ?? "",
       staff: p.role >= nr.MODERATOR,
       hasAccount: !!p.account,
+      nameColor: p.team ? TEAMS[p.team] : null, // Teams mode
       godMode: p.animal?.godMode ?? false,
       speed: p.animal?.speed ?? 1,
       health: 100,
+      wins: p.wins ?? 0,
       resource: p.animal?.resource ?? 100,
       immuneUntil: p.animal?.immuneUntil ?? 0,
     };
@@ -586,6 +622,7 @@ export class Lobby {
   // in who or what did it, and the client shows the killer eating the animal.
   despawn(p, stats = true, death = null) {
     if (!p.animal) return;
+    onGone(this, p);
     this.unloadSlingshot(p);
     p.flight = null;
     const id = p.animal.id;
@@ -627,7 +664,7 @@ export class Lobby {
         if (Math.hypot(a.x - b.x, a.y - b.y) > (a.size + b.size) / 2) continue;
         let damage = 0;
         if (canEatAnimal(a, b)) damage = Math.min(40, 12 + 4 * (a.tier - b.tier));
-        else if (a.tier >= 15 && a.tier === b.tier) {
+        else if ((a.tier >= 15 && a.tier === b.tier) || (q.arena && q.arena === p.arena)) { // tail bites (any tier in a 1v1)
           const behind = Math.cos(b.angle) * (a.x - b.x) + Math.sin(b.angle) * (a.y - b.y) < 0;
           if (behind) damage = 10;
         }
@@ -649,6 +686,7 @@ export class Lobby {
       b.x = Math.min(MAP.x, Math.max(0, b.x + ((b.x - a.x) / d) * 30));
       b.y = Math.min(MAP.y, Math.max(0, b.y + ((b.y - a.y) / d) * 30));
     }
+    if (b.health <= 0 && beforeLethal(this, p, q)) return;
     if (b.health <= 0) this.kill(p, q, cause);
   }
 
@@ -675,7 +713,7 @@ export class Lobby {
       });
       setTimeout(() => this.timer && this.entities.get(e.id) === e && this.removeEntity(e.id), 60_000);
     }
-    this.onDeath?.(p, q);
+    onGone(this, p);
     this.despawn(p, true, { cause, killer: a ? q : null });
   }
 
@@ -690,6 +728,7 @@ export class Lobby {
     if (type === 0 && this.terrainAt(a.x, a.y) === "water") rate = RESOURCE_REFILL;
     if (type === 1 && this.inLava(a.x, a.y)) rate = RESOURCE_REFILL;
     if (custom && this.layer !== "surface" && type === 0 && this.terrainAt(a.x, a.y) !== "water") rate *= 0.6;
+    if (this.mode === "SANDBOX") rate = Math.max(rate, 0);
     a.resource = Math.max(0, Math.min(100, (a.resource ?? 100) + rate * dt));
     const shown = Math.round(a.resource);
     if (shown !== p.shownResource) {
@@ -716,7 +755,7 @@ export class Lobby {
   sendXP(p) {
     p.xp = Math.min(MAX_XP, Math.max(0, Math.round(p.xp)));
     p.ws.send(updateMessage([["xp", [encode("xp", { xp: p.xp, rank: this.rankOf(p) })]]]));
-    if (p.animal && p.xp > 0) recordsRef?.recordXP(p);
+    if (p.animal && p.xp > 0 && this.mode !== "SANDBOX") recordsRef?.recordXP(p);
   }
 
   // Players in this lobby by XP, highest first.
@@ -1030,6 +1069,7 @@ export class Lobby {
     if (this.ticks % 5 === 0) // keep loaded slingshots showing for players who just joined
       for (const sling of this.slingshots) if (sling.loaded) pumpkins.push(record((w) => writeSlingshot(w, sling, { loaded: sling.loaded.animal })));
     this.combatStep(now);
+    modeTick(this, now, pumpkins);
     const records = [];
     for (const p of this.players) {
       const a = p.animal;
@@ -1231,11 +1271,16 @@ export function createGameServer({ accounts, records = null, parties, map = null
     noServer: true,
     handleProtocols: (protocols) => (protocols.has("mope.session") ? "mope.session" : false),
   });
-  const allLobbies = () => [...lobbies.values(), ...parties.lobbies()].flatMap((l) => [l, ...l.layers.values()]);
+  const allLobbies = () => [...lobbies.values(), ...modeLobbies.values(), ...parties.lobbies()].flatMap((l) => [l, ...l.layers.values()]);
   const allPlayers = () => allLobbies().flatMap((l) => [...l.players]);
 
-  function lobbyFor(regionId) {
-    return lobbies.get(regionId);
+  // FFA lobbies are made up front; the other modes' lobbies when someone first joins one.
+  const modeLobbies = new Map();
+  function lobbyFor(regionId, mode = "FFA") {
+    if (mode === "FFA") return lobbies.get(regionId);
+    const key = `${regionId}:${mode}`;
+    if (!modeLobbies.has(key)) modeLobbies.set(key, new Lobby(REGIONS.find((r) => r.id === regionId), { mode }));
+    return modeLobbies.get(key);
   }
 
   // Moves a connected player into another lobby (joining a party by invite code).
@@ -1284,8 +1329,10 @@ export function createGameServer({ accounts, records = null, parties, map = null
           if (party) moveTo(p, (target = party));
           else lobby.serverMessage(p, "That party has ended, or its link has expired. Started a new one.");
         }
+        if (target.mode === "TEAMS") pickTeam(target, p);
         target.spawn(p, "mouse");
         if (p.animal) p.animal.immuneUntil = Date.now() + SPAWN_IMMUNITY_MS;
+        if (p.animal) onSpawn(p.lobby, p);
         if (target.party)
           target.serverMessage(p, `Party ${target.party} · invite: ${p.origin}/?server=${p.serverId}&mode=PARTY&inviteID=${target.party}`);
         return;
@@ -1303,6 +1350,10 @@ export function createGameServer({ accounts, records = null, parties, map = null
         return;
       case "startBoost":
         return lobby.boost(p);
+      case "arenaRequest":
+        return arenaRequest(lobby, p, msg.id);
+      case "arenaResponse":
+        return arenaResponse(lobby, p, !!msg.accepted);
       case "movementLocked":
         p.movementLocked = !!msg.value;
         return;
@@ -1339,9 +1390,11 @@ export function createGameServer({ accounts, records = null, parties, map = null
 
   function accept(req, socket, head) {
     const url = new URL(req.url, "http://x");
-    const [, , regionId, partyCode] = url.pathname.split("/"); // /play/<region>[/<party>]
+    const [, , regionId, partyCode, modeSlug] = url.pathname.split("/"); // /play/<region>[/<party> | /m/<mode>]
     const region = REGIONS.find((r) => r.id === regionId);
-    const lobby = !region ? null : partyCode ? parties.join(region, partyCode) : lobbyFor(regionId);
+    const lobby = !region ? null
+      : partyCode === "m" ? (MODE_BY_SLUG[modeSlug] ? lobbyFor(regionId, MODE_BY_SLUG[modeSlug]) : null)
+      : partyCode ? parties.join(region, partyCode) : lobbyFor(regionId);
     if (!lobby) return socket.destroy();
     const account = accounts.fromRequest(req);
     if (account && accounts.isBanned(account)) return socket.destroy();
@@ -1380,12 +1433,18 @@ export function createGameServer({ accounts, records = null, parties, map = null
   return {
     accept,
     relink,
-    stats: () => Object.fromEntries([...lobbies].map(([id, l]) => [id, l.playerCount + [...l.layers.values()].reduce((n, x) => n + x.playerCount, 0)])),
+    stats: () => {
+      const count = (l) => l.playerCount + [...l.layers.values()].reduce((n, x) => n + x.playerCount, 0);
+      const out = Object.fromEntries([...lobbies].map(([id, l]) => [id, count(l)]));
+      for (const [key, l] of modeLobbies) out[key.split(":")[0]] += count(l);
+      return out;
+    },
     lobbies,
+    lobbyFor,
     // Switches every lobby to a recorded map (or back to generated worlds with null).
     setMap(map) {
       recordedMap = map;
-      for (const l of [...lobbies.values(), ...parties.lobbies()]) l.rebuildWorld();
+      for (const l of [...lobbies.values(), ...modeLobbies.values(), ...parties.lobbies()]) l.rebuildWorld();
     },
   };
 }

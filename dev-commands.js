@@ -10,6 +10,7 @@
 
 import { PUMPKINS, pickPumpkin } from "./pumpkins.js";
 import { MAX_XP } from "./limits.js";
+import { tournamentCommand, tournamentJoin, teamCommand, rankOf, arenaRequest } from "./modes.js";
 
 const COMMANDS = {
   help: { role: 0, usage: "/help", run: help },
@@ -24,6 +25,11 @@ const COMMANDS = {
   god: { role: 4, usage: "/god  (toggle)", run: god },
   tp: { role: 4, usage: "/tp <x> <y> | /tp <player>", run: tp },
   face: { role: 4, usage: "/face <degrees>  (0 = right, 90 = down; aims /shoot)", run: face },
+  tournament: { role: 0, usage: "/tournament [open <4|8|16> [prize XP] | start | cancel]  (staff run it; anyone can check it)", run: tournamentCommand },
+  join: { role: 0, usage: "/join  (enter the open tournament)", run: tournamentJoin },
+  team: { role: 0, usage: "/team  (your team and the team scores)", run: teamCommand },
+  "1v1": { role: 0, usage: "/1v1 <player>  (send a 1v1 request; tier 15+)", run: duel },
+  rank: { role: 0, usage: "/rank  (your ranked 1v1 rating)", run: rank },
   layer: { role: 4, usage: "/layer <surface|underground|sky|space>  (go to another layer world)", run: layer },
   pos: { role: 1, usage: "/pos  (your position, and the nearest hole, cake and slingshot)", run: pos },
   bring: { role: 4, usage: "/bring <player>", run: bring },
@@ -142,6 +148,17 @@ function face(ctx, [deg]) {
   a.angle = ((((Number(deg) || 0) % 360) + 360) % 360) * (Math.PI / 180);
   a.vx = a.vy = 0;
   ctx.player.target = { x: a.x, y: a.y };
+}
+
+function duel(ctx, [name]) {
+  const q = [...ctx.lobby.players].find((o) => o.animal && o.name.toLowerCase() === String(name ?? "").toLowerCase());
+  if (!q) throw new Error(`no player "${name}" here`);
+  arenaRequest(ctx.lobby, ctx.player, q.animal.id);
+}
+
+function rank(ctx) {
+  const r = ctx.records?.rating(ctx.player) ?? 1000;
+  reply(ctx, `Ranked 1v1 rating: ${r} · ${rankOf(r)}`);
 }
 
 function layer(ctx, [name]) {
