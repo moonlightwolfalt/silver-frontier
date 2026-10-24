@@ -157,9 +157,10 @@ an allowed email before the site loads (free for up to 50 users).
   17: 10T, 5T, 2.5T, … 153M for tier 1. Tier 17 grows on a log scale from 1T to 10T. Losing XP
   shrinks the animal, upgrading starts the new animal at its tier's minimum, `/size <n>` pins
   a size, and `/size auto` hands it back to XP.
-- **Pumpkins:** 45 per world on land, arctic and desert. Touching one collects it for XP, and a
-  new one appears 30 s later. Rare ones (gold and up) show on the minimap. `pumpkins.js` sets
-  every variant's spawn chance and XP at tier 17. Each lower tier gets half of the tier above
+- **Pumpkins:** 45 per world on land, arctic and desert. They can't be eaten: walking into one
+  pushes it so it rolls ahead of you, and boosting into it kicks it hard. The XP comes from
+  rolling it into a hole (a goal). Rare ones (gold and up) show on the minimap. `pumpkins.js`
+  sets every variant's spawn chance and goal XP at tier 17. Each lower tier gets half of the tier above
   (tier 16 = ½, tier 15 = ¼, … tier 1 = 1/65,536):
 
   | Variant | Chance | XP at tier 17 |
@@ -177,8 +178,8 @@ an allowed email before the site loads (free for up to 50 users).
   | Onyx | 0.2% | 2.5M |
 
   The bold ones are custom.
-- **Pumpkin goals:** boost into a pumpkin to kick it, or `/shoot` one, and roll it into a hole.
-  A goal gives the shooter the pumpkin's XP, the hole shows "GOAAAAL!!!" and then the scorer's
+- **Pumpkin goals:** push or kick a pumpkin, or `/shoot` one, into a hole. A goal gives
+  whoever touched it last the pumpkin's XP, a new one appears 30 s later, the hole shows "GOAAAAL!!!" and then the scorer's
   name, all-time goal count and bonus XP, and chat announces it.
 - **Leaderboards:** the in-game top 10 (top left) ranks everyone in your world by XP. The menu
   **Leaderboard** tile has two worldwide boards, **Most XP** (the highest XP each player has
@@ -234,7 +235,7 @@ observing (`), teleport to/bring, kick and ban. They can also type commands in c
 | `/players`, `/kick <player>` | moderator |
 | `/ban <player> [minutes]`, `/unban <email>` | trusted moderator |
 | `/announce <message>` | event team |
-| `/shoot [variant] [count]` fires pumpkins the way you face (they roll, stop and can be collected; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole, cake and slingshot), `/face <degrees>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
+| `/shoot [variant] [count]` fires pumpkins the way you face (they roll and stop, and vanish after a minute if they don't score; animals they hit get knocked back), `/pumpkin <variant> [count]`, `/animal <name> [subspecies]`, `/tier <n>`, `/xp <n>`, `/size <n>`, `/speed <x>`, `/zoom <x>`, `/god`, `/tp <x> <y>` or `/tp <player>`, `/pos` (your position and the nearest hole, cake and slingshot), `/face <degrees>`, `/bring <player>`, `/spawn <food> [count]`, `/clearfood`, `/kill [player]` | admin |
 | `/coins <n> [email]`, `/gems <n> [email]`, `/role <email> <0-5>` | developer |
 
 ## Files

@@ -644,10 +644,9 @@ export class Lobby {
   eat(p) {
     const a = p.animal;
     for (const e of this.entities.values()) {
-      if (e.type === "pumpkin" && !this.moving.has(e) && Math.hypot(e.x - a.x, e.y - a.y) <= a.size / 2 + e.size / 2) {
-        // Boosting into a pumpkin kicks it (it can score a goal in a hole); touching collects it.
-        if (a.boostUntil > Date.now()) this.kickPumpkin(p, e);
-        else this.collectPumpkin(p, e);
+      if (e.type === "pumpkin") {
+        // Pumpkins aren't food: touching one pushes it so it rolls, boosting kicks it hard.
+        if (Math.hypot(e.x - a.x, e.y - a.y) <= a.size / 2 + e.size / 2) this.kickPumpkin(p, e);
         continue;
       }
       if (e.type !== "food") continue;
@@ -665,22 +664,31 @@ export class Lobby {
   }
 
   // Fires a pumpkin from the front of the player's animal in the direction it faces. It rolls,
-  // slows down and stops, then can be collected like any other. Animals it hits are knocked back.
+  // slows down and stops, then rolls again when pushed. Animals it hits fast are knocked back.
   shootPumpkin(p, variant, spread = 0) {
     const a = p.animal;
     const dir = a.angle + spread; // the client's angle is the facing direction
     const start = a.size / 2 + 40;
     const e = this.spawnPumpkin(true, variant, { x: a.x + Math.cos(dir) * start, y: a.y + Math.sin(dir) * start });
-    Object.assign(e, { vx: Math.cos(dir) * 1400, vy: Math.sin(dir) * 1400, shooter: p, angle: dir, shot: true });
+    Object.assign(e, { vx: Math.cos(dir) * 1400, vy: Math.sin(dir) * 1400, shooter: p, angle: dir, shot: true, kicked: Date.now() });
     this.moving.add(e);
     if (DEBUG) console.log(`shoot from ${Math.round(a.x)},${Math.round(a.y)} angle ${(dir * 180 / Math.PI).toFixed(1)}°`);
     return e;
   }
 
+  // Rolls a pumpkin away from the animal touching it: as fast as the animal is moving (a bit
+  // more, so it rolls ahead), or a hard kick while boosting. It's moved out to touching distance
+  // so it never sits inside the animal. Whoever touched it last gets the goal.
   kickPumpkin(p, e) {
     const a = p.animal;
     const dir = Math.atan2(e.y - a.y, e.x - a.x);
-    Object.assign(e, { vx: Math.cos(dir) * 1200, vy: Math.sin(dir) * 1200, shooter: p });
+    const reach = a.size / 2 + e.size / 2 + 1;
+    e.x = Math.min(MAP.x, Math.max(0, a.x + Math.cos(dir) * reach));
+    e.y = Math.min(MAP.y, Math.max(0, a.y + Math.sin(dir) * reach));
+    const pushing = Math.max(0, (a.vx ?? 0) * Math.cos(dir) + (a.vy ?? 0) * Math.sin(dir));
+    const speed = a.boostUntil > Date.now() ? 1200 : Math.max(250, pushing * 1.8);
+    if (Math.hypot(e.vx ?? 0, e.vy ?? 0) > speed && this.moving.has(e)) return; // already rolling faster
+    Object.assign(e, { vx: Math.cos(dir) * speed, vy: Math.sin(dir) * speed, shooter: p, kicked: Date.now() });
     this.moving.add(e);
   }
 
@@ -728,6 +736,7 @@ export class Lobby {
         const t = o.animal;
         if (!t || o === e.shooter || Math.hypot(t.x - e.x, t.y - e.y) > t.size / 2 + e.size / 2) continue;
         const d = Math.hypot(e.vx, e.vy) || 1;
+        if (d < 600) continue; // slow ones are just pushed along (eat → kickPumpkin)
         t.x = Math.min(MAP.x, Math.max(0, t.x + (e.vx / d) * 120));
         t.y = Math.min(MAP.y, Math.max(0, t.y + (e.vy / d) * 120));
         o.target = { x: t.x, y: t.y };
@@ -745,21 +754,16 @@ export class Lobby {
       if (Math.hypot(e.vx, e.vy) < 20) {
         if (DEBUG && e.shooter) console.log(`pumpkin stopped at ${Math.round(e.x)},${Math.round(e.y)}`);
         this.moving.delete(e);
-        e.shooter = null; // now anyone, the shooter included, can collect it
+        e.vx = e.vy = 0;
       }
     }
     return records;
   }
 
-  // Touching a pumpkin collects it: XP by variant and tier, then a new one spawns elsewhere.
-  collectPumpkin(p, e) {
-    const xp = pumpkinXP(e.subspecies, p.animal.tier, Lr.length);
-    this.removeEntity(e.id);
-    p.xp += xp;
-    this.sendXP(p);
-    this.serverMessage(p, `${PUMPKINS[e.subspecies].name} pumpkin! +${xp.toLocaleString("en-US")} XP`);
-    if (!e.shot) setTimeout(() => this.timer && this.spawnPumpkin(), PUMPKIN_RESPAWN_MS); // shot ones are extras
-    this.checkProgress(p);
+  // Shot pumpkins are extras: one that hasn't scored a minute after it was last touched goes away.
+  clearOldShots(now) {
+    for (const e of this.entities.values())
+      if (e.type === "pumpkin" && e.shot && !this.moving.has(e) && now - (e.kicked ?? 0) > 60_000) this.removeEntity(e.id);
   }
 
   tick() {
@@ -809,6 +813,7 @@ export class Lobby {
       p.ws.send(records.length || pumpkins.length || focus || minimap || leaderboard ? updateMessage(groups) : new Uint8Array([St.pong.encoder]));
     }
     if (this.ticks % 20 === 0) for (const cake of this.cakes) this.cakeSecond(cake, now);
+    if (this.ticks % 100 === 0) this.clearOldShots(now);
   }
 
   // Camera zoom (lower sees more): /zoom's setting, wider on the cake's layers and in flight.
